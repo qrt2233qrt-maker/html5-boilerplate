@@ -10,6 +10,8 @@ import { queueMessage } from '../messaging/outbox.js';
 import { render } from '../messaging/templates.js';
 import { createSession, can } from '../auth/session.js';
 import { PERMISSIONS, PERMISSION_KEYS, defaultAllowed, isOwnerOnly } from '../auth/permissions.js';
+import { managedScope, scopeSql } from '../lib/context.js';
+import { currentPaySql } from './people.js';
 
 const PAY_FIELDS = ['payType', 'payRate'];
 
@@ -153,11 +155,24 @@ export async function previewInvitation(app, req, token) {
 }
 
 async function joinBusiness(db, req, inv, userId) {
+  const { payType, payRate, department, ...profile } = inv.profile || {};
+  let departmentId = null;
+  if (department) {
+    const { rows: [d] } = await db.query(
+      'SELECT id FROM departments WHERE business_id = $1 AND lower(name) = lower($2) AND archived_at IS NULL', [inv.business_id, department]);
+    departmentId = d?.id ?? (await db.query('INSERT INTO departments (business_id, name) VALUES ($1, $2) RETURNING id', [inv.business_id, department])).rows[0].id;
+  }
   const { rows: [m] } = await db.query(
-    `INSERT INTO memberships (business_id, user_id, role, profile) VALUES ($1, $2, $3, $4)
+    `INSERT INTO memberships (business_id, user_id, role, profile, department_id) VALUES ($1, $2, $3, $4, $5)
      ON CONFLICT (business_id, user_id) DO NOTHING RETURNING id`,
-    [inv.business_id, userId, inv.role, JSON.stringify(inv.profile)]);
+    [inv.business_id, userId, inv.role, JSON.stringify(profile), departmentId]);
   if (!m) throw conflict('already_member', 'You are already part of this business.');
+  if (payRate !== undefined) {
+    await db.query(
+      `INSERT INTO pay_rates (business_id, membership_id, pay_type, rate, effective_from, note, created_by)
+       VALUES ($1, $2, $3, $4, coalesce($5::date, CURRENT_DATE), 'Set at invitation', $6)`,
+      [inv.business_id, m.id, payType || 'salaried', payRate, profile.startDate || null, inv.invited_by]);
+  }
   await db.query('UPDATE invitations SET accepted_at = now(), accepted_user_id = $2 WHERE id = $1', [inv.id, userId]);
   await audit(db, req, { businessId: inv.business_id, actorId: userId, action: 'invitation.accepted', targetType: 'membership', targetId: m.id, after: { role: inv.role } });
   await notify(db, { businessId: inv.business_id, userId: inv.invited_by, type: 'invitation.accepted', data: { name: inv.name, role: inv.role } });
@@ -215,6 +230,7 @@ function publicMember(row, req) {
   if (!can(req, 'members.view_sensitive') && row.user_id !== req.auth.user.id) {
     for (const f of PAY_FIELDS) delete profile[f];
   }
+  const payOk = can(req, 'members.view_sensitive') || can(req, 'payroll.view') || row.user_id === req.auth.user.id;
   return {
     membershipId: row.id,
     userId: row.user_id,
@@ -224,13 +240,19 @@ function publicMember(row, req) {
     role: row.role,
     status: row.status,
     profile,
+    departmentId: row.department_id ?? null,
+    departmentName: row.department_name ?? null,
+    pay: payOk ? row.pay ?? null : undefined,
     joinedAt: row.created_at,
   };
 }
 
-export async function listMembers(app, req, { q, role, status, limit = 50, cursor }) {
+export async function listMembers(app, req, { q, role, status, departmentId, limit = 50, cursor }) {
   const params = [req.member.businessId];
   const where = ['m.business_id = $1'];
+  // Managers who run departments see their own people (spec §2).
+  where.push(scopeSql(await managedScope(req), params));
+  if (departmentId) { params.push(departmentId); where.push(`m.department_id = $${params.length}`); }
   if (q) {
     params.push(`%${q.replace(/[%_\\]/g, (c) => '\\' + c)}%`);
     where.push(`(u.name ILIKE $${params.length} OR u.email ILIKE $${params.length} OR u.phone ILIKE $${params.length})`);
@@ -255,7 +277,8 @@ export async function listMembers(app, req, { q, role, status, limit = 50, curso
       WHERE ${where.slice(0, filterCount).join(' AND ')}`, filterParams);
   params.push(Math.min(Math.max(limit, 1), 100) + 1);
   const { rows } = await app.db.query(
-    `SELECT m.*, u.name, u.email, u.phone FROM memberships m JOIN users u ON u.id = m.user_id
+    `SELECT m.*, u.name, u.email, u.phone, d.name AS department_name, ${currentPaySql} AS pay
+       FROM memberships m JOIN users u ON u.id = m.user_id LEFT JOIN departments d ON d.id = m.department_id
       WHERE ${where.join(' AND ')} ORDER BY lower(u.name), m.id LIMIT $${params.length}`, params);
   const pageSize = params[params.length - 1] - 1;
   const more = rows.length > pageSize;

@@ -1,5 +1,7 @@
 import * as team from '../services/team.js';
 import { requireMember, requirePermission } from '../auth/session.js';
+import peopleRoutes from './people.js';
+import schedulingRoutes from './scheduling.js';
 
 const uuid = { type: 'string', format: 'uuid' };
 const str = (max, min = 1) => ({ type: 'string', minLength: min, maxLength: max });
@@ -10,6 +12,8 @@ const permissionChanges = { type: 'object', maxProperties: 100, additionalProper
 // in that business. Each route then checks its own permission.
 export default async function businessRoutes(app) {
   app.addHook('preHandler', requireMember);
+  await app.register(peopleRoutes);
+  await app.register(schedulingRoutes);
   const ok = { ok: true };
 
   app.get('/', { schema: { params: params() } }, async (req) => ({
@@ -35,7 +39,7 @@ export default async function businessRoutes(app) {
             type: 'object',
             additionalProperties: false,
             properties: {
-              employeeNumber: str(40, 0), jobTitle: str(80, 0), department: str(80, 0),
+              employeeNumber: str(40, 0), jobTitle: str(80, 0), department: str(80, 0), departmentId: uuid,
               startDate: { type: 'string', format: 'date' },
               payType: { enum: ['hourly', 'salaried'] }, payRate: { type: 'integer', minimum: 0 },
             },
@@ -67,7 +71,7 @@ export default async function businessRoutes(app) {
         additionalProperties: false,
         properties: {
           q: str(100, 0), role: { enum: ['owner', 'manager', 'employee'] },
-          status: { enum: ['active', 'suspended', 'terminated', 'archived'] },
+          status: { enum: ['active', 'suspended', 'terminated', 'archived'] }, departmentId: uuid,
           limit: { type: 'integer', minimum: 1, maximum: 100 }, cursor: str(300),
         },
       },

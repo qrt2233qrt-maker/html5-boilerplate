@@ -30,6 +30,11 @@ export function loadConfig(env = process.env) {
       absoluteDays: int(env.SESSION_ABSOLUTE_DAYS, 60),
     },
     invitationDays: int(env.INVITATION_DAYS, 7),
+    // Private files (receipts, documents, exports). Never inside web/.
+    uploadDir: env.UPLOAD_DIR || new URL('../data/uploads', import.meta.url).pathname,
+    maxUploadBytes: int(env.MAX_UPLOAD_MB, 10) * 1024 * 1024,
+    // Background jobs (recurring expenses, alerts, report exports) run in this process.
+    jobs: bool(env.RUN_JOBS, true),
     messaging: {
       // 'log' prints messages to the server log (development only).
       email: env.EMAIL_TRANSPORT || 'log',

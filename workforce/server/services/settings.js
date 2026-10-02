@@ -1,0 +1,210 @@
+// Business settings, departments, locations and categories.
+import { transaction } from '../db/pool.js';
+import { badRequest, conflict, notFound } from '../lib/errors.js';
+import { DEFAULT_SETTINGS, auditB, business, settingsOf } from '../lib/context.js';
+
+// Built-in categories. The first group matches the existing expenses app.
+export const EXPENSE_CATEGORIES = [
+  ['rent', 'Rent', 'إيجار', 'fixed', '🏢'],
+  ['electricity', 'Electricity & generator', 'كهرباء ومولّدة', 'fixed', '⚡'],
+  ['water', 'Water', 'ماء', 'fixed', '💧'],
+  ['internet', 'Internet & phone', 'إنترنت وهاتف', 'fixed', '📶'],
+  ['insurance', 'Insurance', 'تأمين', 'fixed', '🛡️'],
+  ['software', 'Software & subscriptions', 'برامج واشتراكات', 'fixed', '💻'],
+  ['licenses', 'Licenses', 'رخص', 'fixed', '📜'],
+  ['taxes', 'Taxes', 'ضرائب', 'fixed', '🧾'],
+  ['salaries', 'Salaries', 'رواتب', 'payroll', '👥'],
+  ['supplies', 'Supplies', 'مستلزمات', 'operating', '🖇️'],
+  ['equipment', 'Equipment', 'معدّات', 'operating', '🛠️'],
+  ['maintenance', 'Maintenance & repairs', 'صيانة وتصليح', 'operating', '🔧'],
+  ['transport', 'Transportation', 'نقل ومواصلات', 'operating', '🚕'],
+  ['fuel', 'Fuel', 'وقود', 'operating', '⛽'],
+  ['parking', 'Parking', 'مواقف', 'operating', '🅿️'],
+  ['meals', 'Business meals', 'وجبات عمل', 'operating', '🍽️'],
+  ['marketing', 'Marketing', 'تسويق', 'operating', '📣'],
+  ['advertising', 'Advertising', 'إعلانات', 'operating', '📰'],
+  ['cleaning', 'Cleaning', 'تنظيف', 'operating', '🧹'],
+  ['professional', 'Professional services', 'خدمات مهنية', 'operating', '📑'],
+  ['travel', 'Travel', 'سفر', 'operating', '✈️'],
+  ['bankfees', 'Bank & transfer fees', 'رسوم مصرفية', 'operating', '🏦'],
+  ['work_purchases', 'Work purchases', 'مشتريات العمل', 'operating', '🛒'],
+  ['other', 'Other', 'أخرى', 'other', '📦'],
+];
+// Categories employees may claim as work expenses (spec §7).
+const CLAIMABLE = new Set(['transport', 'fuel', 'parking', 'meals', 'supplies', 'equipment', 'work_purchases', 'travel', 'other']);
+
+export const REVENUE_CATEGORIES = [
+  ['sales', 'Sales', 'مبيعات', 'sale'],
+  ['services', 'Services', 'خدمات', 'service'],
+  ['other_income', 'Other income', 'إيرادات أخرى', 'other'],
+  ['refunds', 'Refunds', 'مرتجعات', 'refund'],
+  ['adjustments', 'Adjustments', 'تسويات', 'adjustment'],
+];
+
+export async function seedBusiness(db, businessId) {
+  for (const [key, en, ar, kind, icon] of EXPENSE_CATEGORIES) {
+    await db.query(
+      `INSERT INTO expense_categories (business_id, key, name_en, name_ar, kind, icon, employee_claimable, builtin)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, true) ON CONFLICT (business_id, key) DO NOTHING`,
+      [businessId, key, en, ar, kind, icon, CLAIMABLE.has(key)]);
+  }
+  for (const [key, en, ar, kind] of REVENUE_CATEGORIES) {
+    await db.query(
+      `INSERT INTO revenue_categories (business_id, key, name_en, name_ar, kind, builtin)
+       VALUES ($1, $2, $3, $4, $5, true) ON CONFLICT (business_id, key) DO NOTHING`, [businessId, key, en, ar, kind]);
+  }
+}
+
+export async function seedAll(db) {
+  const { rows } = await db.query(
+    'SELECT b.id FROM businesses b WHERE NOT EXISTS (SELECT 1 FROM expense_categories c WHERE c.business_id = b.id)');
+  for (const r of rows) await seedBusiness(db, r.id);
+}
+
+// ---------- business settings ----------
+
+const PUBLIC_KEYS = ['id', 'name', 'currency', 'currency_exponent', 'timezone', 'locale'];
+
+export async function getSettings(app, req) {
+  const b = await business(req);
+  const out = Object.fromEntries(PUBLIC_KEYS.map((k) => [k, b[k]]));
+  return { ...out, currencyExponent: b.currency_exponent, settings: settingsOf(b), defaults: DEFAULT_SETTINGS };
+}
+
+// Deep-merges allowed setting groups. Currency can't change once money is recorded.
+export async function updateSettings(app, req, patch) {
+  return transaction(app.db, async (db) => {
+    const { rows: [b] } = await db.query('SELECT * FROM businesses WHERE id = $1 FOR UPDATE', [req.member.businessId]);
+    const before = { name: b.name, timezone: b.timezone, currency: b.currency, settings: b.settings };
+    if (patch.currency && (patch.currency !== b.currency || (patch.currencyExponent ?? b.currency_exponent) !== b.currency_exponent)) {
+      const used = await db.query(
+        `SELECT 1 FROM business_expenses WHERE business_id = $1 UNION ALL SELECT 1 FROM revenues WHERE business_id = $1
+         UNION ALL SELECT 1 FROM pay_rates WHERE business_id = $1 UNION ALL SELECT 1 FROM employee_expenses WHERE business_id = $1 LIMIT 1`, [b.id]);
+      if (used.rows[0]) throw conflict('currency_locked', 'The currency can\'t change after money has been recorded.');
+    }
+    if (patch.timezone) {
+      const ok = await db.query('SELECT 1 FROM pg_timezone_names WHERE name = $1', [patch.timezone]);
+      if (!ok.rows[0]) throw badRequest('invalid_timezone', 'Unknown time zone.');
+    }
+    const settings = { ...(b.settings || {}) };
+    for (const group of Object.keys(DEFAULT_SETTINGS)) {
+      if (patch.settings?.[group]) settings[group] = { ...(settings[group] || {}), ...patch.settings[group] };
+    }
+    const { rows: [after] } = await db.query(
+      `UPDATE businesses SET name = coalesce($2, name), timezone = coalesce($3, timezone), locale = coalesce($4, locale),
+         currency = coalesce($5, currency), currency_exponent = coalesce($6, currency_exponent), settings = $7, updated_at = now()
+       WHERE id = $1 RETURNING *`,
+      [b.id, patch.name ?? null, patch.timezone ?? null, patch.locale ?? null, patch.currency ?? null, patch.currencyExponent ?? null, JSON.stringify(settings)]);
+    await auditB(db, req, { action: 'business.settings_updated', targetType: 'business', targetId: b.id, before, after: { name: after.name, timezone: after.timezone, currency: after.currency, settings: after.settings } });
+    req._business = null;
+    return getSettings(app, req);
+  });
+}
+
+// ---------- departments and locations ----------
+
+export async function listDepartments(app, req) {
+  const { rows } = await app.db.query(
+    `SELECT d.id, d.name, d.manager_membership_id AS "managerId", u.name AS "managerName", d.archived_at AS "archivedAt",
+            (SELECT count(*) FROM memberships m WHERE m.department_id = d.id AND m.status = 'active') AS "memberCount"
+       FROM departments d LEFT JOIN memberships mm ON mm.id = d.manager_membership_id LEFT JOIN users u ON u.id = mm.user_id
+      WHERE d.business_id = $1 ORDER BY d.archived_at NULLS FIRST, lower(d.name)`, [req.member.businessId]);
+  return rows;
+}
+
+async function checkManager(db, req, managerId) {
+  if (!managerId) return;
+  const { rows: [m] } = await db.query(
+    'SELECT role FROM memberships WHERE id = $1 AND business_id = $2 AND status = \'active\'', [managerId, req.member.businessId]);
+  if (!m || m.role === 'employee') throw badRequest('invalid_manager', 'Choose an active manager or owner.');
+}
+
+export async function saveDepartment(app, req, id, { name, managerId = null, archived }) {
+  return transaction(app.db, async (db) => {
+    await checkManager(db, req, managerId);
+    let row;
+    try {
+      if (id) {
+        const { rows: [before] } = await db.query('SELECT * FROM departments WHERE id = $1 AND business_id = $2 FOR UPDATE', [id, req.member.businessId]);
+        if (!before) throw notFound();
+        ({ rows: [row] } = await db.query(
+          `UPDATE departments SET name = coalesce($3, name), manager_membership_id = $4,
+             archived_at = CASE WHEN $5::boolean IS NULL THEN archived_at WHEN $5 THEN coalesce(archived_at, now()) ELSE NULL END
+           WHERE id = $1 AND business_id = $2 RETURNING *`, [id, req.member.businessId, name ?? null, managerId, archived ?? null]));
+        await auditB(db, req, { action: 'department.updated', targetType: 'department', targetId: id, before: { name: before.name, managerId: before.manager_membership_id, archived: !!before.archived_at }, after: { name: row.name, managerId: row.manager_membership_id, archived: !!row.archived_at } });
+      } else {
+        ({ rows: [row] } = await db.query(
+          'INSERT INTO departments (business_id, name, manager_membership_id) VALUES ($1, $2, $3) RETURNING *', [req.member.businessId, name, managerId]));
+        await auditB(db, req, { action: 'department.created', targetType: 'department', targetId: row.id, after: { name } });
+      }
+    } catch (err) {
+      if (err.code === '23505') throw conflict('duplicate_name', 'A department with this name already exists.');
+      throw err;
+    }
+    return { id: row.id, name: row.name, managerId: row.manager_membership_id, archivedAt: row.archived_at };
+  });
+}
+
+export async function listLocations(app, req) {
+  const { rows } = await app.db.query(
+    'SELECT id, name, address, archived_at AS "archivedAt" FROM locations WHERE business_id = $1 ORDER BY archived_at NULLS FIRST, lower(name)', [req.member.businessId]);
+  return rows;
+}
+
+export async function saveLocation(app, req, id, { name, address, archived }) {
+  const db = app.db;
+  let row;
+  if (id) {
+    ({ rows: [row] } = await db.query(
+      `UPDATE locations SET name = coalesce($3, name), address = coalesce($4, address),
+         archived_at = CASE WHEN $5::boolean IS NULL THEN archived_at WHEN $5 THEN coalesce(archived_at, now()) ELSE NULL END
+       WHERE id = $1 AND business_id = $2 RETURNING *`, [id, req.member.businessId, name ?? null, address ?? null, archived ?? null]));
+    if (!row) throw notFound();
+  } else {
+    ({ rows: [row] } = await db.query('INSERT INTO locations (business_id, name, address) VALUES ($1, $2, $3) RETURNING *', [req.member.businessId, name, address ?? null]));
+  }
+  await auditB(db, req, { action: id ? 'location.updated' : 'location.created', targetType: 'location', targetId: row.id, after: { name: row.name } });
+  return { id: row.id, name: row.name, address: row.address, archivedAt: row.archived_at };
+}
+
+// ---------- categories ----------
+
+export async function listCategories(app, req, type) {
+  const table = type === 'revenue' ? 'revenue_categories' : 'expense_categories';
+  const { rows } = await app.db.query(`SELECT * FROM ${table} WHERE business_id = $1 ORDER BY archived_at NULLS FIRST, builtin DESC, name_en`, [req.member.businessId]);
+  return rows.map((c) => ({
+    id: c.id, key: c.key, nameEn: c.name_en, nameAr: c.name_ar, kind: c.kind, icon: c.icon ?? null,
+    employeeClaimable: c.employee_claimable ?? false, builtin: c.builtin, archivedAt: c.archived_at,
+  }));
+}
+
+export async function saveCategory(app, req, type, id, input) {
+  const table = type === 'revenue' ? 'revenue_categories' : 'expense_categories';
+  const db = app.db;
+  let row;
+  if (id) {
+    const extra = type === 'revenue' ? '' : ', icon = coalesce($7, icon), employee_claimable = coalesce($8, employee_claimable)';
+    const params = [id, req.member.businessId, input.nameEn ?? null, input.nameAr ?? null, input.archived ?? null, input.kind ?? null];
+    if (type !== 'revenue') params.push(input.icon ?? null, input.employeeClaimable ?? null);
+    ({ rows: [row] } = await db.query(
+      `UPDATE ${table} SET name_en = coalesce($3, name_en), name_ar = coalesce($4, name_ar),
+         archived_at = CASE WHEN $5::boolean IS NULL THEN archived_at WHEN $5 THEN coalesce(archived_at, now()) ELSE NULL END,
+         kind = CASE WHEN builtin THEN kind ELSE coalesce($6, kind) END${extra}
+       WHERE id = $1 AND business_id = $2 RETURNING *`, params));
+    if (!row) throw notFound();
+  } else {
+    const key = `custom_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    if (type === 'revenue') {
+      ({ rows: [row] } = await db.query(
+        'INSERT INTO revenue_categories (business_id, key, name_en, name_ar, kind) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+        [req.member.businessId, key, input.nameEn || input.nameAr, input.nameAr || input.nameEn, input.kind || 'other']));
+    } else {
+      ({ rows: [row] } = await db.query(
+        `INSERT INTO expense_categories (business_id, key, name_en, name_ar, kind, icon, employee_claimable)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        [req.member.businessId, key, input.nameEn || input.nameAr, input.nameAr || input.nameEn, input.kind || 'other', input.icon || '🏷️', !!input.employeeClaimable]));
+    }
+  }
+  await auditB(db, req, { action: id ? 'category.updated' : 'category.created', targetType: `${type}_category`, targetId: row.id, after: { nameEn: row.name_en, nameAr: row.name_ar, archived: !!row.archived_at } });
+  return (await listCategories(app, req, type)).find((c) => c.id === row.id);
+}

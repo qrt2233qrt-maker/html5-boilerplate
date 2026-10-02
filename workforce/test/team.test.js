@@ -131,9 +131,9 @@ describe('team, roles and permissions', function () {
     const { member: manager } = await addMember(t, owner, businessId, { email: 'm@example.com', name: 'Mgr', role: 'manager' });
     const asOwner = (await owner.get(`/api/b/${businessId}/members?q=e@example.com`)).body.items[0];
     const asManager = (await manager.get(`/api/b/${businessId}/members?q=e@example.com`)).body.items[0];
-    assert.equal(asOwner.profile.payRate, 6000);
+    assert.deepEqual({ type: asOwner.pay.payType, rate: asOwner.pay.rate }, { type: 'hourly', rate: 6000 });
     assert.equal(asManager.profile.jobTitle, 'Baker');
-    assert.equal(asManager.profile.payRate, undefined);
+    assert.equal(asManager.pay, undefined);
   });
 
   it('suspension blocks access immediately, and reactivation restores it', async () => {
