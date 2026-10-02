@@ -19,7 +19,7 @@ contact the business owner running your server.
 
 | Action | Limit |
 | --- | --- |
-| Any request | 600 per address per minute (in memory, per server; `RATE_LIMIT_PER_MINUTE`) |
+| Any API request | 600 per address per minute (in memory, per server; `RATE_LIMIT_PER_MINUTE`). Page files are not counted, so an office sharing one address is not blocked by page loads. |
 | Sign-in, sign-up, password and two-step routes | 60 per address per minute (in memory), plus the limits below |
 | Sign in | 30 per IP and 10 per account, per 15 minutes |
 | Two-step code | 30 per IP per 15 minutes |

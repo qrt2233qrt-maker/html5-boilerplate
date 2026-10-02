@@ -44,6 +44,8 @@ describe('authentication', function () {
     assert.equal(JSON.parse(res.body).error.code, 'rate_limited');
     // Other addresses are unaffected.
     assert.equal((await t.app.inject({ method: 'GET', url: '/api/health', remoteAddress: '10.9.9.10' })).statusCode, 200);
+    // Page files aren't counted.
+    assert.equal((await t.app.inject({ method: 'GET', url: '/', remoteAddress: '10.9.9.9' })).statusCode, 200);
   });
 
   it('stores passwords with argon2id, never in plain text', async () => {

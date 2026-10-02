@@ -41,6 +41,9 @@ export async function buildApp(config, options = {}) {
     global: true,
     max: config.rateLimitPerMinute,
     timeWindow: '1 minute',
+    // Only the API: page files (scripts, styles) load in bursts, and a whole
+    // office often shares one address.
+    allowList: (req) => !req.url.startsWith('/api/'),
     errorResponseBuilder: () => tooMany(),
   });
   await app.register(helmet, {

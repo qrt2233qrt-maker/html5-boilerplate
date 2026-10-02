@@ -22,7 +22,8 @@ if (process.env.NODE_ENV === 'production') {
   console.error('Refusing to load demo data in production.');
   process.exit(1);
 }
-const config = loadConfig({ ...process.env, NODE_ENV: 'development', EMAIL_TRANSPORT: 'log', SMS_TRANSPORT: 'log' });
+// Loading months of records in seconds would trip the per-address API limit.
+const config = loadConfig({ ...process.env, NODE_ENV: 'development', EMAIL_TRANSPORT: 'log', SMS_TRANSPORT: 'log', RATE_LIMIT_PER_MINUTE: '1000000' });
 const pool = new pg.Pool({ connectionString: config.databaseUrl, max: 4 });
 await migrate(pool);
 await seedAll(pool);
