@@ -73,13 +73,15 @@ function drawClock(view, week, reload) {
     ${c ? html`<input class="input brk" type="number" min="0" max="600" id="brk" placeholder="${t('breakMinutes')}" aria-label="${t('breakMinutes')}">` : ''}
     <button class="btn ${c ? '' : 'primary'}" type="button" id="clockbtn">${c ? t('clockOut') : t('clockIn')}</button></div>`);
   $('#clockbtn', view).onclick = async (e) => {
-    busy(e.currentTarget);
+    // Keep the button: the event's currentTarget is cleared once we await.
+    const btn = e.currentTarget;
+    busy(btn);
     try {
       if (c) await api.post(bpath('/attendance/clock-out'), { breakMinutes: Number($('#brk', view)?.value || 0) });
       else await api.post(bpath('/attendance/clock-in'), {});
       toast(c ? t('clockedOut') : t('clockedIn'));
       reload();
-    } catch (err) { busy(e.currentTarget, false); toastError(err); }
+    } catch (err) { busy(btn, false); toastError(err); }
   };
 }
 

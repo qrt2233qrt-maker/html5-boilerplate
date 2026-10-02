@@ -104,14 +104,16 @@ async function employeeHome(view, body) {
       ${tile('/account', ICON.user, t('profile'))}
     </div>`);
   $('#clock', body).onclick = async (e) => {
-    busy(e.currentTarget);
+    // Keep the button: the event's currentTarget is cleared once we await.
+    const btn = e.currentTarget;
+    busy(btn);
     try {
       if (clocked) await api.post(bpath('/attendance/clock-out'), {});
       else await api.post(bpath('/attendance/clock-in'), {});
       toast(clocked ? t('clockedOut') : t('clockedIn'));
       homePage.render(view);
     } catch (err) {
-      busy(e.currentTarget, false);
+      busy(btn, false);
       toastError(err);
     }
   };
