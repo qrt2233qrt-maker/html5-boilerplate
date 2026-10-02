@@ -74,7 +74,11 @@ export async function managedScope(req) {
 export function scopeSql(scope, params, alias = 'm') {
   if (!scope) return 'TRUE';
   params.push(scope.departmentIds, scope.managerId);
-  return `(${alias}.department_id = ANY($${params.length - 1}::uuid[]) OR ${alias}.reports_to = $${params.length} OR ${alias}.id = $${params.length})`;
+  // Their own departments, their direct reports, themselves, and anyone
+  // (except the owner) in a department nobody manages or in no department:
+  // otherwise those people would be invisible to every manager.
+  return `(${alias}.department_id = ANY($${params.length - 1}::uuid[]) OR ${alias}.reports_to = $${params.length} OR ${alias}.id = $${params.length}
+    OR (${alias}.role <> 'owner' AND NOT EXISTS (SELECT 1 FROM departments sd WHERE sd.id = ${alias}.department_id AND sd.manager_membership_id IS NOT NULL AND sd.archived_at IS NULL)))`;
 }
 
 export async function inScope(req, membershipId) {

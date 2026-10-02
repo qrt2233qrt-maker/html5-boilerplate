@@ -191,6 +191,10 @@ describe('team, roles and permissions', function () {
     await owner.put(`${B}/permissions/manager`, { 'members.invite': true });
     const { membershipId: cook } = await addMember(t, owner, businessId, { email: 'cook@example.com', profile: { departmentId: kitchen.id } });
     assert.equal((await owner.get(`${B}/members/${cook}`)).body.departmentId, kitchen.id);
+    // While nobody manages the kitchen, every manager can see (and schedule) the cook.
+    assert.ok((await mgr.get(`${B}/members`)).body.items.some((m) => m.membershipId === cook));
+    const { membershipId: chef } = await addMember(t, owner, businessId, { email: 'chef@example.com', role: 'manager', profile: { departmentId: kitchen.id } });
+    await owner.put(`${B}/departments/${kitchen.id}`, { managerId: chef });
 
     // The counter manager can't place someone in the kitchen…
     const bad = await mgr.post(`${B}/invitations`, { name: 'X', email: 'x@example.com', role: 'employee', profile: { departmentId: kitchen.id } });
@@ -201,7 +205,9 @@ describe('team, roles and permissions', function () {
     assert.equal((await owner.get(`${B}/members/${cashier}`)).body.departmentId, counter.id);
     const seen = (await mgr.get(`${B}/members`)).body.items.map((m) => m.membershipId);
     assert.ok(seen.includes(cashier));
+    // Once the kitchen has its own manager, the counter manager no longer sees it.
     assert.ok(!seen.includes(cook));
+    assert.equal((await mgr.get(`${B}/members/${cook}`)).status, 404);
   });
 
   it('keeps the audit log append-only at the database level', async () => {

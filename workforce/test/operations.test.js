@@ -27,9 +27,13 @@ describe('people (phase 2)', function () {
   afterEach(async () => { await t.close(); });
 
   it('creates departments and limits a department manager to their own people', async () => {
-    const { owner, a, b, m, B } = await team(t);
+    const { owner, businessId, a, b, m, B } = await team(t);
     const dept = (await owner.post(B('/departments'), { name: 'Bakery', managerId: m.membershipId })).body;
     await owner.put(B(`/members/${a.membershipId}`), { departmentId: dept.id });
+    // Bushra works in a department with its own manager, so Mona doesn't see her.
+    const m2 = await addMember(t, owner, businessId, { email: 'm2@example.com', name: 'Mazin Manager', role: 'manager' });
+    const shop = (await owner.post(B('/departments'), { name: 'Shop', managerId: m2.membershipId })).body;
+    await owner.put(B(`/members/${b.membershipId}`), { departmentId: shop.id });
     const seen = (await m.member.get(B('/members'))).body.items.map((x) => x.name);
     assert.ok(seen.includes('Ali Employee'));
     assert.ok(!seen.includes('Bushra Employee'), 'manager only sees their department');

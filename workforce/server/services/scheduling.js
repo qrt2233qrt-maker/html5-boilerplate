@@ -325,11 +325,15 @@ export async function myWeek(app, req) {
             count(*) FILTER (WHERE status = 'approved')::int AS approved
        FROM shift_swaps WHERE (requester_membership_id = $1 OR target_membership_id = $1) AND created_at > now() - interval '60 days'`, [req.member.id]);
   const list = shifts.map(shiftOut);
+  // A shift still running from before the week began (Friday night into
+  // Saturday) counts as today's, though it belongs to last week's totals.
+  const { rows: running } = await db.query(
+    `${SHIFT_SELECT} WHERE s.membership_id = $1 AND s.published AND s.status <> 'cancelled' AND s.starts_at <= now() AND s.ends_at > now()`, [req.member.id]);
   const nowMs = Date.now();
   // "Today" is the business's local date, not the server's.
   const localDay = (d) => new Intl.DateTimeFormat('en-CA', { timeZone: biz.timezone }).format(new Date(d));
   const todayKey = localDay(nowMs);
-  const today = list.filter((s) => s.status !== 'cancelled' && (localDay(s.startsAt) === todayKey || (new Date(s.startsAt) <= nowMs && new Date(s.endsAt) > nowMs)));
+  const today = [...running.map(shiftOut), ...list].filter((s) => s.status !== 'cancelled' && (localDay(s.startsAt) === todayKey || (new Date(s.startsAt) <= nowMs && new Date(s.endsAt) > nowMs)));
   const reqCount = Object.fromEntries(reqs.map((r) => [r.status, r.n]));
   return {
     weekStart: w.ws,

@@ -5,7 +5,7 @@ import { ICON, guilloche } from '../icons.js';
 import { S, bpath, can, isOwner } from '../state.js';
 import { dayLabel, hours, money, moneyShort, num, presetRange, shiftRange, time, todayLocal } from '../fmt.js';
 import { chartCard, lineChart } from '../charts.js';
-import { empty, kpiTile, statusPill } from '../components.js';
+import { empty, kpiTile, statusPill, waitingOnMe } from '../components.js';
 import { busy, toast, toastError } from '../ui.js';
 import { noticeText } from './notifications.js';
 import { $, LS, html, mount } from '../util.js';
@@ -124,7 +124,7 @@ async function managerHome(view, body) {
     api.get(bpath('/staffing/today')),
     can('shift_requests.approve') ? api.get(bpath('/shift-requests?status=pending')) : [],
     can('swaps.approve') ? api.get(bpath('/swaps?status=pending_approval')) : [],
-    can('employee_expenses.review') ? api.get(bpath('/employee-expenses')).then((l) => l.filter((c) => ['submitted', 'under_review'].includes(c.status))) : [],
+    can('employee_expenses.review') ? api.get(bpath('/employee-expenses')).then((l) => l.filter(waitingOnMe)) : [],
   ]);
   if (!body.isConnected) return;
   const T = today.totals;

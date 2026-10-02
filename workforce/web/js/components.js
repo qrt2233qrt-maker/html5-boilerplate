@@ -5,7 +5,7 @@ import { LANG, t } from './i18n.js';
 import { ICON } from './icons.js';
 import { PRESETS, money, pct, presetRange, todayLocal } from './fmt.js';
 import { countUp } from './charts.js';
-import { S, bpath } from './state.js';
+import { S, bpath, isOwner } from './state.js';
 import { closeSheet, field, fieldError, onSubmit, openSheet, success, toast } from './ui.js';
 import { $, LS, html, mount, parseMoney, raw } from './util.js';
 
@@ -230,3 +230,7 @@ export const docUrl = (id, download = false) => bpath(`/documents/${id}${downloa
 
 // Today's date for date inputs.
 export const today = todayLocal;
+
+// An employee claim this person should act on now. A claim the manager
+// already approved and that waits for the owner isn't the manager's to decide.
+export const waitingOnMe = (c) => ['submitted', 'under_review'].includes(c.status) && (isOwner() || c.approvalStep !== 2);

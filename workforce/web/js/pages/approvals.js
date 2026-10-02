@@ -4,7 +4,7 @@ import { t } from '../i18n.js';
 import { ICON } from '../icons.js';
 import { bpath, can } from '../state.js';
 import { dateShort, dayLabel, money, shiftRange, time } from '../fmt.js';
-import { docUrl, empty, formSheet, statusPill } from '../components.js';
+import { docUrl, empty, formSheet, statusPill, waitingOnMe } from '../components.js';
 import { busy, skeletonRows, toast } from '../ui.js';
 import { $, html, mount } from '../util.js';
 import { showError } from './schedule.js';
@@ -25,7 +25,7 @@ export const approvalsPage = {
     const [reqs, swaps, claims] = await Promise.all([
       can('shift_requests.approve') ? api.get(bpath('/shift-requests?status=pending')) : [],
       can('swaps.approve') ? api.get(bpath('/swaps?status=pending_approval')) : [],
-      can('employee_expenses.review') ? api.get(bpath('/employee-expenses')).then((l) => l.filter((c) => ['submitted', 'under_review'].includes(c.status))) : [],
+      can('employee_expenses.review') ? api.get(bpath('/employee-expenses')).then((l) => l.filter(waitingOnMe)) : [],
     ]);
     if (!view.isConnected) return;
     const ready = reqs.filter((r) => r.type !== 'offer' || r.takerMembershipId);
