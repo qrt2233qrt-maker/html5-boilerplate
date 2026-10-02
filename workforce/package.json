@@ -11,6 +11,7 @@
   "scripts": {
     "start": "node --env-file-if-exists=.env server/index.js",
     "migrate": "node --env-file-if-exists=.env server/db/migrate.js",
+    "demo": "node --env-file-if-exists=.env scripts/demo.js",
     "test": "mocha --timeout 20000 'test/**/*.test.js'"
   },
   "dependencies": {

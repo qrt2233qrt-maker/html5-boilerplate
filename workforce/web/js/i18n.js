@@ -1,6 +1,7 @@
 // Arabic and English text for the whole app. Arabic is the default because
 // the existing users work in Arabic; the choice is remembered per device.
 import { LS } from './util.js';
+import { en as enOps, ar as arOps } from './strings.js';
 
 const en = {
   appName: 'Workforce',
@@ -418,7 +419,8 @@ const ar = {
   'p.self.profile': 'تحديث ملفهم الشخصي',
 };
 
-const STR = { en, ar };
+// Earlier modules' strings win over the operations file where keys overlap.
+const STR = { en: { ...enOps, ...en }, ar: { ...arOps, ...ar } };
 
 export let LANG = LS.get('lang') || ((navigator.language || '').toLowerCase().startsWith('en') ? 'en' : 'ar');
 

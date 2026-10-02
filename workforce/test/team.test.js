@@ -181,6 +181,29 @@ describe('team, roles and permissions', function () {
     assert.equal(new Set(seen).size, 6);
   });
 
+  it('puts invitees in the chosen department, and a department manager\'s invitees in theirs', async () => {
+    const { owner, businessId } = await ownerWithBusiness(t);
+    const B = `/api/b/${businessId}`;
+    const kitchen = (await owner.post(`${B}/departments`, { name: 'Kitchen' })).body;
+    const counter = (await owner.post(`${B}/departments`, { name: 'Counter' })).body;
+    const { member: mgr, membershipId: mgrId } = await addMember(t, owner, businessId, { email: 'mgr@example.com', role: 'manager', profile: { departmentId: counter.id } });
+    await owner.put(`${B}/departments/${counter.id}`, { managerId: mgrId });
+    await owner.put(`${B}/permissions/manager`, { 'members.invite': true });
+    const { membershipId: cook } = await addMember(t, owner, businessId, { email: 'cook@example.com', profile: { departmentId: kitchen.id } });
+    assert.equal((await owner.get(`${B}/members/${cook}`)).body.departmentId, kitchen.id);
+
+    // The counter manager can't place someone in the kitchen…
+    const bad = await mgr.post(`${B}/invitations`, { name: 'X', email: 'x@example.com', role: 'employee', profile: { departmentId: kitchen.id } });
+    assert.equal(bad.status, 400);
+    assert.equal(bad.body.error.code, 'invalid_department');
+    // …and whoever they invite joins the counter, where they can see them.
+    const { membershipId: cashier } = await addMember(t, mgr, businessId, { email: 'cashier@example.com' });
+    assert.equal((await owner.get(`${B}/members/${cashier}`)).body.departmentId, counter.id);
+    const seen = (await mgr.get(`${B}/members`)).body.items.map((m) => m.membershipId);
+    assert.ok(seen.includes(cashier));
+    assert.ok(!seen.includes(cook));
+  });
+
   it('keeps the audit log append-only at the database level', async () => {
     await ownerWithBusiness(t);
     await assert.rejects(t.pool.query('UPDATE audit_logs SET action = \'x\''), /append-only/);

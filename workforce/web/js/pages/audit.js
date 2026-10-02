@@ -6,7 +6,7 @@ import { bpath } from '../state.js';
 import { busy, skeletonRows, syncList, toastError } from '../ui.js';
 import { $, deviceName, html, initials, mount } from '../util.js';
 
-const FILTERS = ['', 'member', 'invitation', 'permissions', 'business'];
+const FILTERS = ['', 'member', 'invitation', 'permissions', 'business', 'shift', 'swap', 'attendance', 'payroll', 'employee_expense', 'business_expense', 'revenue', 'auth'];
 const st = { action: '', from: '', to: '', items: [], next: null };
 
 function describe(e) {

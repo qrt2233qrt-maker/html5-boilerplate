@@ -61,6 +61,15 @@ export async function createInvitation(app, req, input) {
   if (PAY_FIELDS.some((f) => f in profile) && !can(req, 'payroll.manage')) {
     throw forbidden('You don\'t have permission to set pay information.');
   }
+  // A department manager's invitees join their department, so the manager
+  // can see and schedule them; anyone else's choice must be a live department.
+  const scope = await managedScope(req);
+  if (profile.departmentId) {
+    const { rowCount } = await app.db.query('SELECT 1 FROM departments WHERE id = $1 AND business_id = $2 AND archived_at IS NULL', [profile.departmentId, businessId]);
+    if (!rowCount || (scope && !scope.departmentIds.includes(profile.departmentId))) throw badRequest('invalid_department', 'Choose one of your departments.');
+  } else if (scope && !profile.department) {
+    profile.departmentId = scope.departmentIds[0];
+  }
   const email = normalizeEmail(input.email);
   const phone = normalizePhone(input.phone);
   if (!email && !phone) throw badRequest('contact_required', 'Enter an email address or phone number.');
@@ -155,9 +164,14 @@ export async function previewInvitation(app, req, token) {
 }
 
 async function joinBusiness(db, req, inv, userId) {
-  const { payType, payRate, department, ...profile } = inv.profile || {};
+  const { payType, payRate, department, departmentId: chosen, ...profile } = inv.profile || {};
   let departmentId = null;
-  if (department) {
+  if (chosen) {
+    // Still there? It may have been archived since the invitation went out.
+    const { rows: [d] } = await db.query('SELECT id FROM departments WHERE id = $1 AND business_id = $2 AND archived_at IS NULL', [chosen, inv.business_id]);
+    departmentId = d?.id ?? null;
+  }
+  if (!departmentId && department) {
     const { rows: [d] } = await db.query(
       'SELECT id FROM departments WHERE business_id = $1 AND lower(name) = lower($2) AND archived_at IS NULL', [inv.business_id, department]);
     departmentId = d?.id ?? (await db.query('INSERT INTO departments (business_id, name) VALUES ($1, $2) RETURNING id', [inv.business_id, department])).rows[0].id;

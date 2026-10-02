@@ -34,4 +34,10 @@ export default defineConfig([
       ecmaVersion: 'latest',
     },
   },
+  {
+    // The frontend builds markup in multi-line template literals, which the
+    // (deprecated) core indent rule mis-measures.
+    files: ['workforce/web/**/*.js'],
+    rules: { indent: 'off' },
+  },
 ]);

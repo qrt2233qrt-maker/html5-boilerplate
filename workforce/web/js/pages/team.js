@@ -143,10 +143,9 @@ function openMember(view, id) {
   if (!m) return;
   const p = m.profile || {};
   const b = S.business;
-  const pay = p.payRate !== undefined
-    ? `${fmtMoney(p.payRate, b.currency, b.currencyExponent)} ${t(p.payType === 'hourly' ? 'perHour' : 'perMonth')}` : null;
+  const pay = m.pay ? `${fmtMoney(m.pay.rate, b.currency, b.currencyExponent)} ${t(m.pay.payType === 'hourly' ? 'perHour' : 'perMonth')}` : null;
   const rows = [
-    [t('jobTitle'), p.jobTitle], [t('employeeNumber'), p.employeeNumber], [t('department'), p.department],
+    [t('jobTitle'), p.jobTitle], [t('employeeNumber'), p.employeeNumber], [t('department'), m.departmentName],
     [t('startDate'), p.startDate && fmtDate(p.startDate)], [t('payRate'), pay], [t('joined', { when: '' }).trim(), fmtDate(m.joinedAt)],
   ].filter(([, v]) => v);
   const actionable = canActOn(m);
@@ -171,6 +170,7 @@ function openMember(view, id) {
         ${m.phone ? html`<a class="btn small" href="tel:${m.phone}">${ICON.phone}<span class="ltr">${m.phone}</span></a>` : ''}
         ${m.email ? html`<a class="btn small" href="mailto:${m.email}">${ICON.mail}<span class="ltr">${m.email}</span></a>` : ''}</div>` : ''}
       ${rows.length ? html`<dl class="kv panel">${rows.map(([k, v]) => html`<dt>${k}</dt><dd>${v}</dd>`)}</dl>` : ''}
+      <a class="btn block" href="#/member?id=${m.membershipId}">${ICON.user}${t('openProfile')}</a>
       ${actions.length ? html`<div class="action-list">${actions}</div>` : ''}`,
   });
   $$('[data-a]', sheet).forEach((btn) => { btn.onclick = () => memberAction(view, m, btn.dataset.a, btn); });
@@ -324,7 +324,7 @@ function openInvite(view) {
       <div class="collapse" id="details"><div class="inner"><div class="grid-2">
         ${field({ name: 'employeeNumber', label: t('employeeNumber'), autocomplete: 'off' })}
         ${field({ name: 'jobTitle', label: t('jobTitle'), autocomplete: 'off' })}
-        ${field({ name: 'department', label: t('department'), autocomplete: 'off' })}
+        <div id="dept-slot">${field({ name: 'department', label: t('department'), autocomplete: 'off' })}</div>
         ${field({ name: 'startDate', label: t('startDate'), type: 'date' })}
       </div>
       ${showPay ? html`<div class="field"><span class="label" id="pay-lbl">${t('payType')}</span>
@@ -338,6 +338,14 @@ function openInvite(view) {
     foot: html`<button class="btn primary" type="submit" form="invite-form">${ICON.send}${t('sendInvite')}</button>`,
   });
   const form = $('#invite-form', sheet);
+  // With departments set up, pick one; otherwise typing a name creates it.
+  api.get(bpath('/departments')).then((list) => {
+    const live = list.filter((x) => !x.archivedAt);
+    if (!live.length || !sheet.isConnected) return;
+    mount($('#dept-slot', sheet), html`<div class="field"><label class="label" for="f-departmentId">${t('department')}</label>
+      <select class="input" id="f-departmentId" name="departmentId">${live.length > 1 || isOwner() ? html`<option value="">—</option>` : ''}
+        ${live.map((x) => html`<option value="${x.id}">${x.name}</option>`)}</select><span class="err" id="err-departmentId"></span></div>`);
+  }).catch(() => {});
   const toggle = $('#details-toggle', sheet);
   toggle.onclick = () => {
     const open = $('#details', sheet).classList.toggle('open');
@@ -347,7 +355,7 @@ function openInvite(view) {
   onSubmit(form, async (d) => {
     if (!d.email && !d.phone) return fieldError(form, 'email', t('e.contact_required'));
     const profile = {};
-    for (const k of ['employeeNumber', 'jobTitle', 'department', 'startDate']) if (d[k]) profile[k] = d[k];
+    for (const k of ['employeeNumber', 'jobTitle', 'department', 'departmentId', 'startDate']) if (d[k]) profile[k] = d[k];
     if (showPay && d.payRate) {
       const rate = parseMoney(d.payRate, b.currencyExponent);
       if (rate === null) return fieldError(form, 'payRate', t('e.invalid_input'));

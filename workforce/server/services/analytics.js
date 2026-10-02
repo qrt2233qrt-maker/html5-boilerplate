@@ -10,8 +10,26 @@ const addDays = (s, n) => new Date(Date.parse(s) + n * DAY).toISOString().slice(
 const span = (from, to) => Math.round((Date.parse(to) - Date.parse(from)) / DAY) + 1;
 const change = (cur, prev) => (prev ? (cur - prev) / Math.abs(prev) : null);
 
-// The equal-length period just before [from, to].
+// The period to compare [from, to] with. A range starting on the 1st of a
+// month (this month, last month, quarter, year, or month-to-date) is
+// compared with the same days one calendar step back, so "1–2 October"
+// is set against "1–2 September" and a quarter against the quarter before.
+// Anything else is compared with the equal-length period just before it.
 export function previousRange(from, to) {
+  const [fy, fm, fd] = from.split('-').map(Number);
+  if (fd === 1) {
+    const [ty, tm, td] = to.split('-').map(Number);
+    const months = (ty - fy) * 12 + (tm - fm) + 1;
+    const step = months <= 1 ? 1 : months <= 3 ? 3 : 12;
+    const shift = (y, m, d) => {
+      const first = new Date(Date.UTC(y, m - 1 - step, 1));
+      const last = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
+      return new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), Math.min(d, last))).toISOString().slice(0, 10);
+    };
+    // A range ending on a month's last day ends on the last day there too.
+    const monthEnd = td === new Date(Date.UTC(ty, tm, 0)).getUTCDate();
+    if (months <= 12) return [shift(fy, fm, 1), shift(ty, tm, monthEnd ? 31 : td)];
+  }
   const n = span(from, to);
   return [addDays(from, -n), addDays(from, -1)];
 }
@@ -56,11 +74,14 @@ async function series(db, biz, from, to, bucket) {
 export async function overview(app, req, { from, to, bucket }) {
   assertRange(from, to);
   const biz = await business(req);
-  const [pf, pt] = previousRange(from, to);
+  // A range running into the future (this month, this year) is compared
+  // up to today only, so a month two days old isn't set against a full one.
+  const now = await today(app.db, biz);
+  const [pf, pt] = previousRange(from, to > now && now >= from ? now : to);
   const [cur, prev] = await Promise.all([profitAndLoss(app.db, biz.id, from, to), profitAndLoss(app.db, biz.id, pf, pt)]);
   const b = bucket || bucketOf(from, to);
   const { rows: [people] } = await app.db.query(
-    'SELECT count(*) FILTER (WHERE status = \'active\')::int AS active FROM memberships WHERE business_id = $1', [biz.id]);
+    'SELECT count(*) FILTER (WHERE status = \'active\' AND role <> \'owner\')::int AS active FROM memberships WHERE business_id = $1', [biz.id]);
   const kpi = (c, p) => ({ value: c, previous: p, change: change(c, p) });
   return {
     from, to, previousFrom: pf, previousTo: pt, bucket: b,
@@ -73,7 +94,8 @@ export async function overview(app, req, { from, to, bucket }) {
       payrollShare: { value: cur.revenue.total ? cur.laborCost / cur.revenue.total : null },
       activeEmployees: { value: people.active },
     },
-    series: await series(app.db, biz, from, to, b),
+    // Buckets stop at today: future days have nothing to show yet.
+    series: await series(app.db, biz, from, to > now && now >= from ? now : to, b),
     expenseBreakdown: cur.expenses.byCategory,
     revenueBreakdown: cur.revenue.byCategory,
     payroll: {
@@ -147,6 +169,7 @@ export async function workforce(app, req, { from, to }) {
        FROM memberships m WHERE m.business_id = $1 AND ${scope}`, params);
   const { rows: [shifts] } = await db.query(
     `SELECT coalesce(sum(extract(epoch FROM (s.ends_at - s.starts_at)) / 3600 - s.break_minutes / 60.0) FILTER (WHERE s.status <> 'cancelled'), 0)::float AS scheduled_hours,
+            coalesce(sum(extract(epoch FROM (s.ends_at - s.starts_at)) / 3600 - s.break_minutes / 60.0) FILTER (WHERE s.status <> 'cancelled' AND s.ends_at <= now()), 0)::float AS past_hours,
             count(*) FILTER (WHERE s.status <> 'cancelled')::int AS shifts,
             count(*) FILTER (WHERE s.status = 'scheduled' AND s.ends_at < now() AND NOT EXISTS (
               SELECT 1 FROM attendance a WHERE a.membership_id = s.membership_id AND a.clock_in < s.ends_at AND coalesce(a.clock_out, now()) > s.starts_at))::int AS missed
@@ -169,7 +192,7 @@ export async function workforce(app, req, { from, to }) {
   return {
     employees: people,
     shifts: {
-      count: shifts.shifts, scheduledHours: round(shifts.scheduled_hours), workedHours: round(hours.worked), missed: shifts.missed,
+      count: shifts.shifts, scheduledHours: round(shifts.scheduled_hours), scheduledToDateHours: round(shifts.past_hours), workedHours: round(hours.worked), missed: shifts.missed,
       changes: changes.changes, swaps: Math.floor(changes.swap_moves / 2),
     },
     overtime: { hours: round(Number(ot.hours)), cost: Number(ot.cost) },

@@ -8,6 +8,11 @@ pg.types.setTypeParser(20, (value) => {
   return n;
 });
 
+// A calendar date (DATE) stays the 'YYYY-MM-DD' string it is. The default
+// turns it into a Date at the server's local midnight, which shifts a day
+// when serialised on any server not running in UTC.
+pg.types.setTypeParser(1082, (value) => value);
+
 export function createPool(databaseUrl) {
   return new pg.Pool({ connectionString: databaseUrl, max: 10 });
 }

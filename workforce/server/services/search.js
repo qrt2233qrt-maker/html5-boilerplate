@@ -63,7 +63,7 @@ export async function search(app, req, q) {
     const { rows } = await db.query(
       `SELECT id, period_start, period_end, status FROM payroll_runs WHERE business_id = $1 AND (to_char(period_start, 'YYYY-MM-DD') LIKE $2 OR to_char(period_end, 'YYYY-MM-DD') LIKE $2)
         ORDER BY period_start DESC LIMIT 5`, [biz.id, `${term.replace(/[%_\\]/g, '')}%`]);
-    add('payroll', rows.map((r) => ({ id: r.id, title: `${r.period_start.toISOString().slice(0, 10)} – ${r.period_end.toISOString().slice(0, 10)}`, status: r.status })));
+    add('payroll', rows.map((r) => ({ id: r.id, title: `${r.period_start} – ${r.period_end}`, startDate: r.period_start, endDate: r.period_end, status: r.status })));
   }
   const lower = term.toLowerCase();
   add('reports', availableReports(req).filter((r) => r.title.en.toLowerCase().includes(lower) || r.title.ar.includes(term)).map((r) => ({ id: r.key, title: r.title })));

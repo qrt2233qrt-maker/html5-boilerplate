@@ -3,7 +3,7 @@
 import { api, setCsrf } from './api.js';
 import { LS } from './util.js';
 
-export const S = { me: null, business: null, perms: new Set() };
+export const S = { me: null, business: null, perms: new Set(), settings: null, settingsFor: null };
 
 export async function loadMe() {
   try {
@@ -46,4 +46,14 @@ export function clearSession() {
   S.business = null;
   S.perms = new Set();
   setCsrf(null);
+}
+
+// Business settings (week start, rules). Loaded once per business.
+export async function loadSettings() {
+  if (!S.business || S.settingsFor === S.business.id) return S.settings;
+  const r = await api.get(bpath('/settings'));
+  S.settings = r.settings;
+  S.settingsInfo = r;
+  S.settingsFor = S.business.id;
+  return S.settings;
 }

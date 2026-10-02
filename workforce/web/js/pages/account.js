@@ -37,6 +37,10 @@ export const accountPage = {
       <section class="panel"><div class="panel-head"><h2>${t('devices')}</h2></div><div id="devices"><div class="skeleton sk-row"></div></div>
         <div class="row-gap"><button class="btn small" type="button" id="out-others">${t('signOutOthers')}</button>
         <button class="btn small danger" type="button" id="out-all">${t('signOutAll')}</button></div></section>
+      <section class="panel"><h2>${t('notificationSettings')}</h2><p class="muted small">${t('notificationSettingsBody')}</p>
+        <div class="perm"><div class="mid"><b>${t('emailCopies')}</b></div><label class="switch"><input type="checkbox" role="switch" data-pref="email" aria-label="${t('emailCopies')}"><span></span></label></div>
+        <div class="perm"><div class="mid"><b>${t('smsCopies')}</b><small>${t('smsCopiesHint')}</small></div><label class="switch"><input type="checkbox" role="switch" data-pref="sms" aria-label="${t('smsCopies')}"><span></span></label></div>
+        <a class="btn small ghost" href="#/member?id=${S.business.membershipId}">${t('myProfileDetails')}</a></section>
       <section class="panel"><h2>${t('language')}</h2><div class="seg" role="radiogroup" aria-label="${t('language')}">
         ${[['ar', 'العربية'], ['en', 'English']].map(([v, l]) => html`<label><input type="radio" name="lang" value="${v}" ${LANG === v ? 'checked' : ''}><span>${l}</span></label>`)}
       </div></section>
@@ -78,6 +82,13 @@ export const accountPage = {
     };
     drawTwoFactor(view);
     loadDevices(view);
+    api.get(`/api/b/${S.business.id}/notification-preferences`).then((prefs) => {
+      view.querySelectorAll('[data-pref]').forEach((i) => {
+        i.checked = !!prefs[i.dataset.pref];
+        i.onchange = () => api.put(`/api/b/${S.business.id}/notification-preferences`, { [i.dataset.pref]: i.checked })
+          .then(() => toast(t('saved'), { ms: 1500 }), (err) => { i.checked = !i.checked; toastError(err); });
+      });
+    }).catch(() => {});
     if (query.get('focus') === '2fa') {
       $('#twofa', view).scrollIntoView({ block: 'start' });
       if (!u.twoFactorEnabled) setupTwoFactor(view);

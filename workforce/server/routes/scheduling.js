@@ -57,6 +57,7 @@ export default async function schedulingRoutes(app) {
     async (req) => requests.listSwaps(app, req, req.query));
   app.post('/swaps', { schema: { params: params(), body: obj({ myShiftId: uuid, targetShiftId: uuid, reason: optStr(500) }, ['myShiftId', 'targetShiftId']) } },
     async (req, reply) => reply.code(201).send(await requests.createSwap(app, req, req.body)));
+  app.get('/swaps/candidates/:id', { schema: { params: idParams } }, async (req) => requests.swapCandidates(app, req, req.params.id));
   app.get('/swaps/:id', { schema: { params: idParams } }, async (req) => requests.getSwap(app, req, req.params.id));
   app.post('/swaps/:id/respond', { schema: { params: idParams, body: obj({ accept: bool }, ['accept']) } },
     async (req) => requests.respondSwap(app, req, req.params.id, req.body.accept));

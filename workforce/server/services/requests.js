@@ -303,3 +303,24 @@ export async function reviewSwap(app, req, id, { approve, note }) {
   });
   return getSwap(app, req, id);
 }
+
+// Colleagues' upcoming shifts this shift could be swapped with, already
+// checked against every schedule rule (names and times only).
+export async function swapCandidates(app, req, shiftId) {
+  const biz = await business(req);
+  const { rows: [mine] } = await app.db.query('SELECT * FROM shifts WHERE id = $1 AND business_id = $2', [shiftId, biz.id]);
+  if (!mine || mine.membership_id !== req.member.id) throw notFound();
+  const { rows } = await app.db.query(
+    `SELECT s.*, u.name AS member_name FROM shifts s JOIN memberships m ON m.id = s.membership_id JOIN users u ON u.id = m.user_id
+      WHERE s.business_id = $1 AND s.membership_id <> $2 AND s.status = 'scheduled' AND s.published AND m.status = 'active'
+        AND s.starts_at > now() AND s.starts_at BETWEEN $3::timestamptz - interval '14 days' AND $3::timestamptz + interval '14 days'
+        AND ($4::uuid IS NULL OR s.department_id IS NULL OR s.department_id = $4)
+      ORDER BY abs(extract(epoch FROM (s.starts_at - $3::timestamptz))) LIMIT 40`, [biz.id, req.member.id, mine.starts_at, mine.department_id]);
+  const out = [];
+  for (const s of rows) {
+    if ((await swapProblems(app.db, biz, mine, s)).length) continue;
+    out.push({ id: s.id, memberName: s.member_name, startsAt: s.starts_at, endsAt: s.ends_at });
+    if (out.length >= 20) break;
+  }
+  return out.sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
+}
