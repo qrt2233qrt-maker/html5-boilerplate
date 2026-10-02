@@ -11,6 +11,7 @@ import { sessionPlugin } from './auth/session.js';
 import { createOutbox, createTransports } from './messaging/outbox.js';
 import authRoutes from './routes/auth.js';
 import businessRoutes from './routes/business.js';
+import { configureNotify } from './lib/notify.js';
 
 const webRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'web');
 
@@ -28,6 +29,7 @@ export async function buildApp(config, options = {}) {
   app.decorate('config', config);
   app.decorate('db', options.pool ?? createPool(config.databaseUrl));
   app.decorate('outbox', createOutbox(app.db, options.transports ?? createTransports(config, app.log), app.log));
+  configureNotify({ appUrl: config.appUrl });
 
   await app.register(cookie);
   await app.register(helmet, {
@@ -50,6 +52,11 @@ export async function buildApp(config, options = {}) {
   });
 
   sessionPlugin(app);
+
+  // Deliver any emails/SMS a change queued, without delaying the response.
+  app.addHook('onResponse', async (req) => {
+    if (req.method !== 'GET') app.outbox.flush().catch((err) => req.log.error({ err }, 'outbox flush failed'));
+  });
 
   app.addHook('onSend', async (req, reply, payload) => {
     if (req.url.startsWith('/api/')) reply.header('Cache-Control', 'no-store');

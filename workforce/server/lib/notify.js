@@ -1,12 +1,30 @@
 import { loadPermissions } from '../auth/permissions.js';
+import { queueMessage } from '../messaging/outbox.js';
+import { SMS_TYPES, noticeTitle } from '../messaging/notices.js';
 
-// In-app notification. Email/SMS copies are sent by the notifications
-// service according to each person's preferences (Phase 12).
+let appUrl = '';
+export const configureNotify = (opts) => { appUrl = opts.appUrl; };
+
+// In-app notification, plus email/SMS copies according to the person's
+// preferences for this business (spec §22).
 export async function notify(db, { businessId = null, userId, type, data = {} }) {
   if (!userId) return;
-  await db.query(
-    'INSERT INTO notifications (business_id, user_id, type, data) VALUES ($1, $2, $3, $4)',
-    [businessId, userId, type, JSON.stringify(data)]);
+  await db.query('INSERT INTO notifications (business_id, user_id, type, data) VALUES ($1, $2, $3, $4)', [businessId, userId, type, JSON.stringify(data)]);
+  const { rows: [u] } = await db.query(
+    `SELECT u.email, u.phone, u.email_verified_at, u.phone_verified_at, u.locale, b.locale AS business_locale, b.name AS business_name, m.notification_prefs AS prefs
+       FROM users u LEFT JOIN memberships m ON m.user_id = u.id AND m.business_id = $2 LEFT JOIN businesses b ON b.id = $2
+      WHERE u.id = $1`, [userId, businessId]);
+  if (!u || !u.prefs) return;
+  const locale = u.locale || u.business_locale || 'ar';
+  const title = noticeTitle(type, locale, data);
+  if (!title) return;
+  const link = `${appUrl}/#/notifications`;
+  if (u.prefs.email && u.email && u.email_verified_at) {
+    await queueMessage(db, { channel: 'email', to: u.email, subject: `${u.business_name}: ${title}`, body: `${title}\n\n${link}` });
+  }
+  if (u.prefs.sms && u.phone && u.phone_verified_at && SMS_TYPES.has(type)) {
+    await queueMessage(db, { channel: 'sms', to: u.phone, body: `${u.business_name}: ${title}` });
+  }
 }
 
 export async function notifyMember(db, businessId, membershipId, type, data = {}) {

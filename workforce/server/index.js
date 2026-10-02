@@ -1,21 +1,19 @@
 import { loadConfig } from './config.js';
 import { buildApp } from './app.js';
 import { migrate } from './db/migrate.js';
-import { pruneRateLimits } from './lib/rate-limit.js';
+import { seedAll } from './services/settings.js';
+import { startJobs } from './jobs.js';
 
 const config = loadConfig();
 const app = await buildApp(config);
 await migrate(app.db);
 
-// Background work: retry undelivered messages and clean up old counters.
-const timers = [
-  setInterval(() => app.outbox.flush().catch((err) => app.log.error({ err }, 'outbox')), 30_000),
-  setInterval(() => pruneRateLimits(app.db).catch((err) => app.log.error({ err }, 'rate limit prune')), 3_600_000),
-];
+await seedAll(app.db);
+const stopJobs = config.jobs ? startJobs(app) : () => {};
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, async () => {
-    timers.forEach(clearInterval);
+    stopJobs();
     await app.close();
     process.exit(0);
   });

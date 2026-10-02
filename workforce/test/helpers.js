@@ -13,7 +13,7 @@ export async function setup() {
   const sent = [];
   const capture = async (msg) => { sent.push({ ...msg }); };
   const config = loadConfig({ NODE_ENV: 'test', DATABASE_URL: TEST_DB, APP_URL: 'http://app.test' });
-  const app = await buildApp(config, { pool, logger: false, transports: { email: capture, sms: capture } });
+  const app = await buildApp(config, { pool, logger: process.env.TEST_LOG ? { level: 'error' } : false, transports: { email: capture, sms: capture } });
   return {
     app,
     pool,
