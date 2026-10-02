@@ -31,6 +31,21 @@ describe('authentication', function () {
     assert.equal((await c.get(`/api/b/${bid}/members`)).status, 200);
   });
 
+  it('puts a per-address ceiling in front of every route, tighter on sign-in', async () => {
+    const health = await t.app.inject({ method: 'GET', url: '/api/health' });
+    assert.equal(health.headers['x-ratelimit-limit'], '600');
+    const login = await t.app.inject({ method: 'POST', url: '/api/auth/login', payload: { identifier: 'x@example.com', password: 'whatever password' } });
+    assert.equal(login.headers['x-ratelimit-limit'], '60');
+    // Past the ceiling the answer is the app's usual error shape.
+    let res;
+    // (The health check has no database limit, so this is the new ceiling.)
+    for (let i = 0; i < 601; i++) res = await t.app.inject({ method: 'GET', url: '/api/health', remoteAddress: '10.9.9.9' });
+    assert.equal(res.statusCode, 429);
+    assert.equal(JSON.parse(res.body).error.code, 'rate_limited');
+    // Other addresses are unaffected.
+    assert.equal((await t.app.inject({ method: 'GET', url: '/api/health', remoteAddress: '10.9.9.10' })).statusCode, 200);
+  });
+
   it('stores passwords with argon2id, never in plain text', async () => {
     await ownerWithBusiness(t);
     const { rows: [u] } = await t.pool.query('SELECT password_hash FROM users');

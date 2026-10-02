@@ -19,6 +19,8 @@ contact the business owner running your server.
 
 | Action | Limit |
 | --- | --- |
+| Any request | 600 per address per minute (in memory, per server; `RATE_LIMIT_PER_MINUTE`) |
+| Sign-in, sign-up, password and two-step routes | 60 per address per minute (in memory), plus the limits below |
 | Sign in | 30 per IP and 10 per account, per 15 minutes |
 | Two-step code | 30 per IP per 15 minutes |
 | Business sign-up | 5 per IP per hour |
@@ -73,6 +75,8 @@ contact the business owner running your server.
 | Disk exhaustion | Uploads and exports had no per-person rate. | Limited (see table) |
 | Department scope | An invitation's chosen department was ignored on joining, which left new people outside their manager's view. | Fixed, with a test |
 | Dates | Calendar dates were parsed as local-midnight timestamps, so a server not running in UTC could shift them by a day. | Dates are now plain `YYYY-MM-DD`; tests pass under `TZ=Asia/Baghdad` |
+| CodeQL | "Missing rate limiting" on the sign-in routes: they were limited inside the services (PostgreSQL), which the scanner can't see. | Added an in-memory per-address ceiling on every route (tighter on sign-in) in front of the database limits, with a test |
+| CodeQL | "Network data written to file" on saving uploads. | Intended: that is the upload feature. Names are random, the type is checked from the contents, the size is capped, files are `0600` and outside the web root |
 | Container | The image runs as the unprivileged `node` user with only production dependencies. | OK |
 | Headers | CSP, HSTS, frame denial and referrer policy confirmed on a production build. | OK |
 

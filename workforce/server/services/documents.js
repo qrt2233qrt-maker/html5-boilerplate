@@ -29,6 +29,9 @@ async function store(app, buf) {
   const key = randomToken();
   const dir = path.join(app.config.uploadDir, key.slice(0, 2));
   await mkdir(dir, { recursive: true });
+  // Writing an uploaded file is the point here. What makes it safe: the
+  // name is random (never from the client), callers check the type from the
+  // contents and the size first, and the folder is outside the web root.
   await writeFile(path.join(dir, key), buf, { mode: 0o600 });
   return key;
 }

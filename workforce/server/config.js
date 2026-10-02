@@ -35,6 +35,7 @@ export function loadConfig(env = process.env) {
     maxUploadBytes: int(env.MAX_UPLOAD_MB, 10) * 1024 * 1024,
     // Background jobs (recurring expenses, alerts, report exports) run in this process.
     jobs: bool(env.RUN_JOBS, true),
+    rateLimitPerMinute: Number(env.RATE_LIMIT_PER_MINUTE) || 600,
     messaging: {
       // 'log' prints messages to the server log (development only).
       email: env.EMAIL_TRANSPORT || 'log',

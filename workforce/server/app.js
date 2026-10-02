@@ -1,12 +1,13 @@
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import helmet from '@fastify/helmet';
+import rateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createPool } from './db/pool.js';
-import { AppError } from './lib/errors.js';
+import { AppError, tooMany } from './lib/errors.js';
 import { sessionPlugin } from './auth/session.js';
 import { createOutbox, createTransports } from './messaging/outbox.js';
 import authRoutes from './routes/auth.js';
@@ -32,6 +33,16 @@ export async function buildApp(config, options = {}) {
   configureNotify({ appUrl: config.appUrl });
 
   await app.register(cookie);
+  // A cheap in-memory ceiling per client address in front of every route.
+  // The PostgreSQL limits in the services stay the real controls (per
+  // account, shared across servers); this one stops floods before they
+  // reach the database. Sign-in routes set a tighter limit of their own.
+  await app.register(rateLimit, {
+    global: true,
+    max: config.rateLimitPerMinute,
+    timeWindow: '1 minute',
+    errorResponseBuilder: () => tooMany(),
+  });
   await app.register(helmet, {
     contentSecurityPolicy: {
       directives: {

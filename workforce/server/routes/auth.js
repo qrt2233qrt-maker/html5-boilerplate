@@ -7,10 +7,13 @@ const body = (properties, required = []) => ({ body: { type: 'object', additiona
 const password = str(200);
 const code = str(20);
 
+// Per client address, in front of the per-account limits in the services.
+const SIGN_IN_LIMIT = { max: 60, timeWindow: '1 minute' };
+
 export default async function authRoutes(app) {
   const ok = { ok: true };
 
-  app.post('/api/auth/register', {
+  app.post('/api/auth/register', { config: { rateLimit: SIGN_IN_LIMIT },
     schema: body({
       businessName: str(120), name: str(120), email: str(254, 0), phone: str(32, 0), password,
       locale: { enum: ['ar', 'en'] }, currency: { type: 'string', pattern: '^[A-Z]{3}$' },
@@ -21,10 +24,10 @@ export default async function authRoutes(app) {
     return reply.code(201).send(ok);
   });
 
-  app.post('/api/auth/login', { schema: body({ identifier: str(254), password }, ['identifier', 'password']) },
+  app.post('/api/auth/login', { config: { rateLimit: SIGN_IN_LIMIT }, schema: body({ identifier: str(254), password }, ['identifier', 'password']) },
     async (req, reply) => auth.login(app, req, reply, req.body));
 
-  app.post('/api/auth/login/2fa', { schema: body({ challenge: str(100), code }, ['challenge', 'code']) },
+  app.post('/api/auth/login/2fa', { config: { rateLimit: SIGN_IN_LIMIT }, schema: body({ challenge: str(100), code }, ['challenge', 'code']) },
     async (req, reply) => {
       await auth.loginTwoFactor(app, req, reply, req.body);
       return ok;
@@ -59,12 +62,12 @@ export default async function authRoutes(app) {
     });
   }
 
-  app.post('/api/auth/password/forgot', { schema: body({ identifier: str(254) }, ['identifier']) }, async (req) => {
+  app.post('/api/auth/password/forgot', { config: { rateLimit: SIGN_IN_LIMIT }, schema: body({ identifier: str(254) }, ['identifier']) }, async (req) => {
     await auth.forgotPassword(app, req, req.body);
     return ok;
   });
 
-  app.post('/api/auth/password/reset', {
+  app.post('/api/auth/password/reset', { config: { rateLimit: SIGN_IN_LIMIT },
     schema: body({ token: str(100), identifier: str(254), code, password }, ['password']),
   }, async (req, reply) => {
     await auth.resetPassword(app, req, req.body);
@@ -72,7 +75,7 @@ export default async function authRoutes(app) {
     return ok;
   });
 
-  app.post('/api/auth/password/change', {
+  app.post('/api/auth/password/change', { config: { rateLimit: SIGN_IN_LIMIT },
     preHandler: requireUser,
     schema: body({ currentPassword: password, newPassword: password }, ['currentPassword', 'newPassword']),
   }, async (req) => {
@@ -91,9 +94,9 @@ export default async function authRoutes(app) {
   });
 
   app.post('/api/auth/2fa/setup', { preHandler: requireUser }, async (req) => auth.setupTwoFactor(app, req));
-  app.post('/api/auth/2fa/enable', { preHandler: requireUser, schema: body({ code }, ['code']) },
+  app.post('/api/auth/2fa/enable', { config: { rateLimit: SIGN_IN_LIMIT }, preHandler: requireUser, schema: body({ code }, ['code']) },
     async (req) => auth.enableTwoFactor(app, req, req.body));
-  app.post('/api/auth/2fa/disable', { preHandler: requireUser, schema: body({ password }, ['password']) }, async (req) => {
+  app.post('/api/auth/2fa/disable', { config: { rateLimit: SIGN_IN_LIMIT }, preHandler: requireUser, schema: body({ password }, ['password']) }, async (req) => {
     await auth.disableTwoFactor(app, req, req.body);
     return ok;
   });
