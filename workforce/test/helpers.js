@@ -58,6 +58,7 @@ export function client(app, ip = '127.0.0.1') {
       return res.body;
     },
     get cookie() { return cookie; },
+    get csrf() { return csrf; },
     setCsrf(v) { csrf = v; },
   };
   return c;

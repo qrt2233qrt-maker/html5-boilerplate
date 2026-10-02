@@ -2,6 +2,7 @@ import * as team from '../services/team.js';
 import { requireMember, requirePermission } from '../auth/session.js';
 import peopleRoutes from './people.js';
 import schedulingRoutes from './scheduling.js';
+import financeRoutes from './finance.js';
 
 const uuid = { type: 'string', format: 'uuid' };
 const str = (max, min = 1) => ({ type: 'string', minLength: min, maxLength: max });
@@ -14,6 +15,7 @@ export default async function businessRoutes(app) {
   app.addHook('preHandler', requireMember);
   await app.register(peopleRoutes);
   await app.register(schedulingRoutes);
+  await app.register(financeRoutes);
   const ok = { ok: true };
 
   app.get('/', { schema: { params: params() } }, async (req) => ({
