@@ -629,5 +629,5 @@ td:hover > .add-cell, .add-cell:focus-visible { opacity: 1; }
 td.row-gap { display: table-cell; white-space: nowrap; }
 td.row-gap > * + * { margin-inline-start: 4px; }
 /* Amounts never break mid-number; tiles in a sheet go two across. */
-.kpi b { overflow-wrap: normal; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kpi b { overflow-wrap: normal; word-break: keep-all; font-size: clamp(1rem, 4.4vw, 1.3rem); }
 .sheet .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }

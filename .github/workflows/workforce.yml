@@ -37,3 +37,27 @@ jobs:
       - name: Test
         working-directory: workforce
         run: npm ci && npm test
+      - name: Backup and restore round trip
+        working-directory: workforce
+        env:
+          DATABASE_URL: postgres://postgres@localhost:5432/workforce_test
+        run: |
+          mkdir -p /tmp/up && echo receipt > /tmp/up/r.jpg
+          UPLOAD_DIR=/tmp/up BACKUP_DIR=/tmp/bk sh scripts/backup.sh
+          psql "$DATABASE_URL" -c "CREATE DATABASE restore_check"
+          DATABASE_URL=postgres://postgres@localhost:5432/restore_check UPLOAD_DIR=/tmp/up2 \
+            sh scripts/restore.sh /tmp/bk/daily/workforce-*.dump /tmp/bk/daily/uploads-*.tar.gz
+          test "$(cat /tmp/up2/r.jpg)" = receipt
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the production image
+        working-directory: workforce
+        run: docker build -t workforce:ci .
+      - name: Check the compose file
+        working-directory: workforce
+        run: cp .env.example .env && POSTGRES_PASSWORD=ci docker compose config -q

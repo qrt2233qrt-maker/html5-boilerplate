@@ -62,7 +62,7 @@ records across. Nothing that works today is removed.
 | Passwords | argon2id (`argon2`) | The current OWASP recommendation |
 | Sessions | Opaque random tokens in an `HttpOnly` cookie, stored hashed | Revocable (logout everywhere), unlike stateless JWTs |
 | Frontend | Vanilla ES modules, no build step | Matches the existing app and reuses its components and design system directly. Revisit at Phase 11 if the page count makes a framework worth it. |
-| Charts (Phase 11) | Chart.js, self-hosted | Accessible, responsive, MIT licensed, no CDN dependency |
+| Charts (Phase 11) | Small hand-written SVG charts (`web/js/charts.js`) | Chart.js was the plan; three chart types turned out to need under 300 lines, with no dependency, a strict CSP, RTL, a table view per chart and a validated colour-blind-safe palette |
 | Tests | Mocha (already in the repo) against a real PostgreSQL | Authorisation bugs hide in SQL, so tests use the real database |
 | Email | SMTP (nodemailer) or the dev outbox | Works with any provider |
 | SMS | Twilio REST or the dev outbox | Configured by environment variables |
@@ -230,7 +230,7 @@ Everything in §30, applied as follows.
 - **Files (Phase 2/7):** private storage, MIME sniffing plus extension allow-list, size limits, random object names, downloads only through permission-checked endpoints.
 - **Encryption:** TLS in transit; AES-256-GCM for 2FA secrets and sensitive profile fields; encrypted database backups.
 - **Audit:** append-only `audit_logs`, protected by a trigger, visible only to owners or roles granted `audit.view`.
-- **Backups (Phase 16):** daily `pg_dump` plus continuous WAL archiving to separate encrypted storage, 30-day retention, and a restore drill each quarter; document storage versioned and backed up separately.
+- **Backups (Phase 16):** nightly `pg_dump` plus an uploads archive, verified and kept 14 days and 12 months (`scripts/backup.sh`), restore into an empty database only (`scripts/restore.sh`). Off-server copies and point-in-time recovery depend on the host; see [DEPLOY.md](DEPLOY.md#backups).
 
 ---
 
@@ -241,27 +241,38 @@ Each phase ships with migrations, API, UI, tests and an update to this document.
 | # | Phase | Main deliverables | Status |
 | --- | --- | --- | --- |
 | 1 | Authentication, users, roles, permissions | Registration, invitations, verification, sign-in, 2FA, sessions, password recovery, permission engine, make/remove manager, suspend, audit foundation, Arabic/English shell UI | **Done** |
-| 2 | Employee management | Departments, profiles, pay-rate history, documents, termination flow (disable sign-in, cancel future shifts, keep history), archive vs delete | Planned |
-| 3 | Schedules and shifts | Timetables, shift assignment, shift history, availability, overlap and hour-limit checks | Planned |
-| 4 | Shift requests and swaps | Change, time-off, offer and pickup requests; the two-party swap workflow with validation | Planned |
-| 5 | Attendance | Clock in/out, breaks, missed shifts, adjustments with history | Planned |
-| 6 | Payroll | Pay periods, hourly/salaried/overtime, bonuses, deductions, reimbursements, paid/pending/review status, locked periods | Planned |
-| 7 | Employee expenses | Submission, receipts, configurable approval workflow, reimbursement into payroll | Planned |
-| 8 | Business expenses | Ledger, categories, recurring expenses, **importer from the current expenses app** | Planned |
-| 9 | Revenue | Income, refunds, adjustments | Planned |
-| 10 | Profit and loss, budgets | Server-calculated P&L, labour cost, budget vs actual | Planned |
-| 11 | Analytics and charts | Owner dashboard, analytics centre, drill-downs, date filters, smart alerts | Planned |
-| 12 | Notifications | In-app, email and SMS for each event in §22, with preferences | Planned |
-| 13 | Reports and export | All §27 reports; CSV, Excel and PDF; background jobs | Planned |
-| 14 | Audit log UI | Search and filter audit history, plus coverage for every phase | Planned |
-| 15 | Security hardening | Threat review, penetration-test checklist, dependency audit, encryption of sensitive fields | Planned |
-| 16 | Testing, performance, deployment | Load tests, indexes review, backups, CI, production hosting | Planned |
+| 2 | Employee management | Departments, profiles, pay-rate history, documents, termination flow (disable sign-in, cancel future shifts, keep history), archive vs delete | **Done** |
+| 3 | Schedules and shifts | Timetables, shift assignment, shift history, availability, overlap and hour-limit checks | **Done** |
+| 4 | Shift requests and swaps | Change, time-off, offer and pickup requests; the two-party swap workflow with validation | **Done** |
+| 5 | Attendance | Clock in/out, breaks, missed shifts, adjustments with history | **Done** |
+| 6 | Payroll | Pay periods, hourly/salaried/overtime, bonuses, deductions, reimbursements, paid/pending/review status, locked periods | **Done** |
+| 7 | Employee expenses | Submission, receipts, configurable approval workflow, reimbursement into payroll | **Done** |
+| 8 | Business expenses | Ledger, categories, recurring expenses, **importer from the current expenses app** | **Done** |
+| 9 | Revenue | Income, refunds, adjustments | **Done** |
+| 10 | Profit and loss, budgets | Server-calculated P&L, labour cost, budget vs actual | **Done** |
+| 11 | Analytics and charts | Owner dashboard, analytics centre, drill-downs, date filters, smart alerts | **Done** |
+| 12 | Notifications | In-app, email and SMS for each event in §22, with preferences | **Done** |
+| 13 | Reports and export | All §27 reports; CSV, Excel and PDF; background jobs | **Done** |
+| 14 | Audit log UI | Search and filter audit history, plus coverage for every phase | **Done** |
+| 15 | Security hardening | Threat review, penetration-test checklist, dependency audit, encryption of sensitive fields | **Done** |
+| 16 | Testing, performance, deployment | Load tests, indexes review, backups, CI, production hosting | **Done** |
 
 ### Phase 1 notes
 
 - Delivered as listed above, with 27 server tests and a browser walkthrough at phone and desktop sizes in both languages.
 - Left for later phases on purpose: changing your own email or phone (Phase 2 profile), notification preferences and email/SMS fan-out for in-app notifications (Phase 12), sign-in history shown to the user (Phase 14).
-- Hosting is not chosen yet (Phase 16). The app needs a Node.js host and a managed PostgreSQL with backups.
+- Hosting: see [DEPLOY.md](DEPLOY.md).
+
+### Phases 2–16 notes
+
+- All sixteen phases are built: 65 server tests, a browser walkthrough of every screen for all three roles (desktop in English, phone in Arabic), and interactive checks of the main workflows (swap, clock-in, claim and approval, adding shifts against the rules, drill-down, payroll, export, search).
+- **Approvals (Phase 7)** are one configurable rule rather than a general rule builder: a manager approves employee expenses, and claims above an owner-set amount also need the owner. The `approvals` table records every step, so more steps can be added later without a migration.
+- **PDF (Phase 13)** comes from the browser's print dialog with a print stylesheet. CSV and Excel files are generated on the server in the background.
+- **Payroll (Phase 6)** calculates gross pay, overtime, bonuses, deductions and repayments. It does not calculate taxes or social security, or send money.
+- **Importer (Phase 8)** reads the old app's own "Export CSV" file, or a fuller JSON format that also includes salary records. Receipt photos aren't in the CSV and stay in the old app.
+- **Performance (Phase 16):** indexes reviewed (`003_performance.sql`); on six months of demo data the heaviest endpoints answer in under 25 ms at the 95th percentile.
+- **Deployment (Phase 16):** a Dockerfile (non-root, health check), Docker Compose with PostgreSQL and nightly backups, and [DEPLOY.md](DEPLOY.md). Hosting itself still has to be chosen and paid for.
+- **Security (Phase 15):** see [SECURITY.md](SECURITY.md) for the controls, the review findings and the pre-launch checklist.
 
 ### Importing the current expenses app (Phase 8)
 
@@ -270,7 +281,12 @@ model, so the importer must accept both shapes:
 
 - Approvals are stored at `approvals/<uid>__<expenseId>` (a flat collection), not `approvals/items/...`.
 - Admin-created expenses are marked with `auto: true` on the approval record, not `autoApproved` on the expense.
-- Receipts are base64 JPEGs in `expenses/<uid>/receipts/<expenseId>`; they move to private file storage.
-- People are Claude account ids. Each one is matched to an invited member before import, and the owner confirms the mapping.
+- Receipts are base64 JPEGs in `expenses/<uid>/receipts/<expenseId>`. Neither import format carries them, so they stay viewable in the old app.
+- People are Claude account ids. Imported expenses become business expenses with the person's name in the notes, rather than claims tied to members, because the old app's people don't map one-to-one to invited members.
 - Amounts are already integer IQD with 0 decimals, which maps directly to `BIGINT` minor units.
 
+As built (`server/services/importer.js`, Settings → Import):
+
+- **CSV** — the old app's "Export CSV" file as-is: `{ "csv": "<file text>" }`. Rows have no ids, so each row's import reference is a hash of its contents plus a counter for identical rows. Categories are matched by their English name.
+- **JSON** — `{ expenses: [{ uid, id, amount, categoryId, date, vendor, method, note }], approvals: { "<uid>__<id>": { status } }, payrollRuns: { "YYYY-MM": { lines: { <employeeId>: { amount, date, method } } } }, payrollEmployees: { <employeeId>: { name } }, people: { <uid>: name } }`, for a fuller export that includes salary records (imported into the Salaries category).
+- Either way, rejected expenses are skipped, unknown categories go to "Other" and are listed in the result, and re-importing adds nothing twice.

@@ -2,7 +2,7 @@ import * as analytics from '../services/analytics.js';
 import * as notes from '../services/notifications.js';
 import * as reports from '../services/reports.js';
 import { search } from '../services/search.js';
-import { importExpensesApp } from '../services/importer.js';
+import { fromExpensesCsv, importExpensesApp } from '../services/importer.js';
 import { requirePermission } from '../auth/session.js';
 import { arr, bool, date, datetime, idParams, int, obj, oneOf, params, range, str, uuid } from '../lib/schema.js';
 
@@ -54,8 +54,10 @@ export default async function insightRoutes(app) {
         properties: {
           expenses: arr({ type: 'object', required: ['uid', 'id', 'amount', 'date'], properties: { uid: str(200), id: str(200), amount: { type: 'number', minimum: 0 }, categoryId: str(80, 0), date, vendor: { type: ['string', 'null'] }, method: { type: ['string', 'null'] }, note: { type: ['string', 'null'] } } }, 100000),
           approvals: { type: 'object' }, payrollRuns: { type: 'object' }, payrollEmployees: { type: 'object' }, people: { type: 'object' },
+          // Or the app's own "Export CSV" file, as text.
+          csv: { type: 'string', maxLength: 20 * 1024 * 1024 },
         },
       },
     },
-  }, async (req) => importExpensesApp(app, req, req.body));
+  }, async (req) => importExpensesApp(app, req, typeof req.body.csv === 'string' ? fromExpensesCsv(req.body.csv) : req.body));
 }

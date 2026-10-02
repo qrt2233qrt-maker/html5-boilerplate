@@ -184,4 +184,31 @@ describe('search and import (phases 13-14)', function () {
     assert.ok(pnl.expenses.byCategory.some((c) => c.key === 'electricity'));
     assert.equal((await a.member.post(B('/import/expenses-app'), data)).status, 403);
   });
+
+  it('imports the app\'s own CSV export, matching categories and skipping rejected rows', async () => {
+    const { owner, B } = await team(t);
+    // Exactly as the app writes it: BOM, every field quoted, CRLF, a comma and a quote inside fields.
+    const q = (v) => `"${String(v).replace(/"/g, '""')}"`;
+    const rows = [
+      ['Date', 'Vendor', 'Category', 'Amount', 'Currency', 'Payment method', 'Person', 'Status', 'Note', 'Receipt'],
+      ['2025-04-01', 'Abu Ali, generator', 'Generator & electricity / مولّدة وكهرباء', 30000, 'IQD', 'Cash', 'Ali', 'Approved', 'April "amps"', 'no'],
+      ['2025-04-02', 'Station', 'Fuel / وقود', 12000, 'IQD', 'Card', 'Ali', 'Approved', '', 'yes'],
+      ['2025-04-02', 'Station', 'Fuel / وقود', 12000, 'IQD', 'Card', 'Ali', 'Approved', '', 'yes'],
+      ['2025-04-03', 'Cafe', 'Meals & hospitality / وجبات وضيافة', 8000, 'IQD', 'Cash', 'Sara', 'Rejected', '', 'no'],
+      ['2025-04-04', 'Print shop', 'Flyers / منشورات', 15000, 'IQD', 'Cash', 'Sara', 'Pending', '', 'no'],
+    ];
+    const csv = '\uFEFF' + rows.map((r) => r.map(q).join(',')).join('\r\n');
+    const r1 = (await owner.post(B('/import/expenses-app'), { csv })).body;
+    // The two identical fuel rows are two real purchases and both count.
+    assert.deepEqual([r1.imported, r1.skippedRejected], [4, 1]);
+    assert.deepEqual(r1.unknownCategories, ['flyers']);
+    const r2 = (await owner.post(B('/import/expenses-app'), { csv })).body;
+    assert.deepEqual([r2.imported, r2.alreadyImported], [0, 4]);
+    const list = (await owner.get(B('/business-expenses?from=2025-04-01&to=2025-04-30'))).body.items;
+    const gen = list.find((x) => x.vendor === 'Abu Ali, generator');
+    assert.equal(gen.amount, 30000);
+    assert.equal(gen.categoryKey, 'electricity');
+    assert.ok(list.some((x) => x.vendor === 'Print shop' && x.categoryKey === 'other'));
+    assert.equal((await owner.post(B('/import/expenses-app'), { csv: 'just,some\ntext,here' })).body.error.code, 'import_bad_file');
+  });
 });

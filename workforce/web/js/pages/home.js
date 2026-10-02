@@ -3,7 +3,7 @@ import { api } from '../api.js';
 import { t, tn } from '../i18n.js';
 import { ICON, guilloche } from '../icons.js';
 import { S, bpath, can, isOwner } from '../state.js';
-import { dayLabel, hours, money, moneyShort, presetRange, shiftRange, time, todayLocal } from '../fmt.js';
+import { dayLabel, hours, money, moneyShort, num, presetRange, shiftRange, time, todayLocal } from '../fmt.js';
 import { chartCard, lineChart } from '../charts.js';
 import { empty, kpiTile, statusPill } from '../components.js';
 import { busy, toast, toastError } from '../ui.js';
@@ -70,8 +70,8 @@ async function employeeHome(view, body) {
         <div class="mini-stats">
           <div><small>${t('scheduled')}</small><b class="num">${hours(week.scheduledHours)}</b></div>
           <div><small>${t('worked')}</small><b class="num">${hours(week.workedHours)}</b></div>
-          <div><small>${t('completedShifts')}</small><b class="num">${week.completedShifts}</b></div>
-          <div><small>${t('rescheduled')}</small><b class="num">${week.rescheduledShifts}</b></div>
+          <div><small>${t('completedShifts')}</small><b class="num">${num(week.completedShifts, 0)}</b></div>
+          <div><small>${t('rescheduled')}</small><b class="num">${num(week.rescheduledShifts, 0)}</b></div>
         </div>
         ${week.shifts.length ? html`<div class="listbox">${week.shifts.map((s) => html`<a class="row" href="#/schedule?shift=${s.id}">
             <span class="mid"><span class="t1">${dayLabel(s.startsAt)}</span><span class="t2 num">${time(s.startsAt)} – ${time(s.endsAt)}</span></span>
@@ -84,9 +84,9 @@ async function employeeHome(view, body) {
         <b class="big num">${money(current.net)}</b>${statusPill(current.status)}</a>` : ''}
       <section class="panel"><h2>${t('requestsAndSwaps')}</h2>
         <div class="mini-stats">
-          <div><small>${t('st_pending')}</small><b class="num">${week.requests.pending + week.swaps.pending}</b></div>
-          <div><small>${t('st_approved')}</small><b class="num">${week.requests.approved + week.swaps.approved}</b></div>
-          <div><small>${t('expensesWaiting')}</small><b class="num">${pendingClaims}</b></div>
+          <div><small>${t('st_pending')}</small><b class="num">${num(week.requests.pending + week.swaps.pending, 0)}</b></div>
+          <div><small>${t('st_approved')}</small><b class="num">${num(week.requests.approved + week.swaps.approved, 0)}</b></div>
+          <div><small>${t('expensesWaiting')}</small><b class="num">${num(pendingClaims, 0)}</b></div>
         </div>
         ${week.swaps.waiting_on_me ? html`<a class="banner info" href="#/requests"><span>${tn('swapsWaitingOnYou', week.swaps.waiting_on_me)}</span><span class="chev">${ICON.chev}</span></a>` : ''}
       </section>
@@ -135,7 +135,7 @@ async function managerHome(view, body) {
   mount(body, html`
     <div class="stat-row">
       ${[['scheduled', T.scheduled, ''], ['working', T.working, 'ok'], ['late', T.late, 'warn'], ['missed', T.missed, 'over'], ['open', T.open, '']].map(([k, n, cls]) =>
-    html`<div class="stat ${cls}"><small>${t(`staff_${k}`)}</small><b class="num">${n}</b></div>`)}
+    html`<div class="stat ${cls}"><small>${t(`staff_${k}`)}</small><b class="num">${num(n, 0)}</b></div>`)}
     </div>
     ${waiting ? html`<a class="banner info" href="#/approvals"><span>${tn('approvalsWaiting', waiting)}</span><span class="btn small">${t('review')}</span></a>` : ''}
     <div class="cols"><section class="panel"><div class="panel-head"><h2>${t('todaysStaffing')}</h2><a class="btn small ghost" href="#/schedule">${t('schedule')}</a></div>

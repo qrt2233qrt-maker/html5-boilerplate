@@ -99,7 +99,7 @@ async function drill(key, label, r) {
     title: label,
     body: html`<div class="kpis small">
         <div class="kpi"><small>${t('total')}</small><b class="num">${money(d.total)}</b>${d.change ? html`<span class="delta ${d.change > 0 ? 'bad' : 'good'}">${d.change > 0 ? '↑' : '↓'} ${pct(Math.abs(d.change), 1)}</span>` : d.change === 0 ? html`<span class="delta">= ${pct(0)}</span>` : ''}</div>
-        <div class="kpi"><small>${t('transactions')}</small><b class="num">${d.count}</b></div>
+        <div class="kpi"><small>${t('transactions')}</small><b class="num">${num(d.count, 0)}</b></div>
         <div class="kpi"><small>${t('shareOfExpenses')}</small><b class="num">${pct(d.share, 1)}</b></div>
         <div class="kpi"><small>${t('previousPeriod')}</small><b class="num">${money(d.previous)}</b></div></div>
       <section id="d-trend"></section>
@@ -119,18 +119,18 @@ async function workforce(body, r) {
   sec.className = 'panel';
   mount(sec, html`<h2>${t('workforce')}</h2>
     <div class="kpis small">
-      <div class="kpi"><small>${t('totalEmployees')}</small><b class="num">${w.employees.total}</b></div>
-      <div class="kpi"><small>${t('activeEmployees')}</small><b class="num">${w.employees.active}</b></div>
-      <div class="kpi"><small>${t('newEmployees')}</small><b class="num">${w.employees.new}</b></div>
-      <div class="kpi"><small>${t('terminatedEmployees')}</small><b class="num">${w.employees.terminated}</b></div>
+      <div class="kpi"><small>${t('totalEmployees')}</small><b class="num">${num(w.employees.total, 0)}</b></div>
+      <div class="kpi"><small>${t('activeEmployees')}</small><b class="num">${num(w.employees.active, 0)}</b></div>
+      <div class="kpi"><small>${t('newEmployees')}</small><b class="num">${num(w.employees.new, 0)}</b></div>
+      <div class="kpi"><small>${t('terminatedEmployees')}</small><b class="num">${num(w.employees.terminated, 0)}</b></div>
     </div>
     <h3 class="h2 small">${t('shiftAnalytics')}</h3>
     <div class="kpis small">
       <div class="kpi"><small>${t('scheduledHours')}</small><b class="num">${hours(w.shifts.scheduledHours)}</b></div>
       <div class="kpi"><small>${t('workedHours')}</small><b class="num">${hours(w.shifts.workedHours)}</b></div>
-      <div class="kpi"><small>${t('missedShifts')}</small><b class="num">${w.shifts.missed}</b></div>
-      <div class="kpi"><small>${t('shiftChanges')}</small><b class="num">${w.shifts.changes}</b></div>
-      <div class="kpi"><small>${t('swaps')}</small><b class="num">${w.shifts.swaps}</b></div>
+      <div class="kpi"><small>${t('missedShifts')}</small><b class="num">${num(w.shifts.missed, 0)}</b></div>
+      <div class="kpi"><small>${t('shiftChanges')}</small><b class="num">${num(w.shifts.changes, 0)}</b></div>
+      <div class="kpi"><small>${t('swaps')}</small><b class="num">${num(w.shifts.swaps, 0)}</b></div>
       <div class="kpi"><small>${t('overtime')}</small><b class="num">${hours(w.overtime.hours)}</b>${can('finance.view') ? html`<span class="muted small">${money(w.overtime.cost)}</span>` : ''}</div>
     </div>
     ${w.shifts.scheduledToDateHours ? html`<p class="hint">${t('workforceHint', { n: num((w.shifts.workedHours / w.shifts.scheduledToDateHours) * 100, 0) })}</p>` : ''}`);

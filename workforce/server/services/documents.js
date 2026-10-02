@@ -5,6 +5,7 @@ import { randomToken } from '../lib/crypto.js';
 import { badRequest, forbidden, notFound } from '../lib/errors.js';
 import { can } from '../auth/session.js';
 import { auditB, inScope } from '../lib/context.js';
+import { rateLimit } from '../lib/rate-limit.js';
 
 // Allowed uploads, recognised by their first bytes (the declared type and
 // file name are not trusted).
@@ -34,6 +35,8 @@ async function store(app, buf) {
 
 // Saves an uploaded file (base64) after checking its real type and size.
 export async function saveUpload(app, req, db, { data, filename, kind, membershipId = null }) {
+  // Keeps one account from filling the disk: 100 files an hour each.
+  await rateLimit(app.db, `upload:${req.auth.user.id}`, 100, 3600);
   const buf = Buffer.from(String(data || ''), 'base64');
   if (!buf.length) throw badRequest('empty_file', 'The file is empty.');
   if (buf.length > app.config.maxUploadBytes) throw badRequest('file_too_large', 'The file is too large.');

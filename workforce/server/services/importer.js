@@ -1,6 +1,8 @@
 // Imports the existing Business Expenses artifact's data (spec Phase 8).
 // Re-running is safe: each record carries an import reference.
 import { transaction } from '../db/pool.js';
+import { createHash } from 'node:crypto';
+import { badRequest } from '../lib/errors.js';
 import { auditB, business } from '../lib/context.js';
 
 // Old category ids -> new built-in category keys.
@@ -9,6 +11,76 @@ const CATEGORY_MAP = {
   marketing: 'marketing', software: 'software', equipment: 'equipment', repairs: 'maintenance', fees: 'professional',
   bankfees: 'bankfees', taxes: 'taxes', other: 'other',
 };
+// The app's CSV export names categories "English / Arabic".
+const CATEGORY_BY_NAME = {
+  'office & supplies': 'office', 'rent & utilities': 'rent', 'generator & electricity': 'generator', fuel: 'fuel',
+  'travel & transport': 'travel', 'meals & hospitality': 'meals', 'marketing & ads': 'marketing', 'software & subscriptions': 'software',
+  equipment: 'equipment', 'maintenance & repairs': 'repairs', 'professional fees': 'fees', 'bank & transfer fees': 'bankfees',
+  'taxes & licenses': 'taxes', other: 'other',
+};
+const METHOD_BY_NAME = { cash: 'cash', card: 'card', 'bank transfer': 'bank', 'mobile wallet': 'wallet' };
+
+// RFC 4180 CSV (quoted fields, doubled quotes, CRLF or LF, optional BOM).
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let quoted = false;
+  const src = text.replace(/^\uFEFF/, '');
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (quoted) {
+      if (c === '"' && src[i + 1] === '"') { field += '"'; i++; } else if (c === '"') quoted = false; else field += c;
+    } else if (c === '"') quoted = true;
+    else if (c === ',') { row.push(field); field = ''; } else if (c === '\n' || c === '\r') {
+      if (c === '\r' && src[i + 1] === '\n') i++;
+      row.push(field); field = '';
+      if (row.some((v) => v !== '')) rows.push(row);
+      row = [];
+    } else field += c;
+  }
+  row.push(field);
+  if (row.some((v) => v !== '')) rows.push(row);
+  return rows;
+}
+
+/**
+ * Turns the Business Expenses app's "Export CSV" file into the import shape.
+ * The CSV carries no record ids, so each row's reference is a hash of its
+ * contents (plus a counter for identical rows): importing the same file, or
+ * an overlapping one, again adds nothing twice.
+ */
+export function fromExpensesCsv(text) {
+  const [head, ...rows] = parseCsv(String(text || ''));
+  const col = Object.fromEntries((head || []).map((h, i) => [h.trim().toLowerCase(), i]));
+  for (const need of ['date', 'amount', 'category']) {
+    if (!(need in col)) throw badRequest('import_bad_file', 'This isn\'t a Business Expenses CSV export.');
+  }
+  const get = (r, name) => (name in col ? (r[col[name]] ?? '').trim() : '');
+  const seen = new Map();
+  const data = { expenses: [], approvals: {}, people: {} };
+  for (const r of rows) {
+    const date = get(r, 'date');
+    const amount = Number(get(r, 'amount').replace(/[,\s]/g, ''));
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(amount) || amount < 0) continue;
+    const person = get(r, 'person') || 'Unknown';
+    const uid = `csv-${createHash('sha256').update(person).digest('hex').slice(0, 16)}`;
+    const base = createHash('sha256').update([date, get(r, 'vendor'), get(r, 'category'), amount, person, get(r, 'note')].join('\u241F')).digest('hex').slice(0, 24);
+    const n = (seen.get(base) || 0) + 1;
+    seen.set(base, n);
+    const id = n > 1 ? `${base}-${n}` : base;
+    const catName = get(r, 'category').split(' / ')[0].trim().toLowerCase();
+    data.expenses.push({
+      uid, id, amount, date, vendor: get(r, 'vendor') || null, note: get(r, 'note') || null,
+      categoryId: CATEGORY_BY_NAME[catName] || catName || 'other',
+      method: METHOD_BY_NAME[get(r, 'payment method').toLowerCase()] || get(r, 'payment method') || null,
+    });
+    data.people[uid] = person;
+    if (get(r, 'status').toLowerCase() === 'rejected') data.approvals[`${uid}__${id}`] = { status: 'rejected' };
+  }
+  return data;
+}
+
 const METHOD = { cash: 'Cash', card: 'Card', bank: 'Bank transfer', wallet: 'Mobile wallet' };
 
 /**

@@ -1,0 +1,61 @@
+# Single-server setup: the app, PostgreSQL, and nightly backups.
+#   cp .env.example .env   # fill it in (DATABASE_URL is set below)
+#   docker compose up -d
+# Put a TLS-terminating proxy (Caddy, nginx, a cloud load balancer) in front
+# of port 3000 and set APP_URL to the https:// address.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: workforce
+      POSTGRES_USER: workforce
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workforce -d workforce"]
+      interval: 10s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://workforce:${POSTGRES_PASSWORD}@db:5432/workforce
+      UPLOAD_DIR: /data/uploads
+      TRUST_PROXY: "true"
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - uploads:/data/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      PGHOST: db
+      PGUSER: workforce
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: workforce
+      UPLOAD_DIR: /data/uploads
+      BACKUP_DIR: /backups
+      KEEP_DAILY: ${KEEP_DAILY:-14}
+      KEEP_MONTHLY: ${KEEP_MONTHLY:-12}
+    volumes:
+      - uploads:/data/uploads:ro
+      - ./backups:/backups
+      - ./scripts/backup.sh:/backup.sh:ro
+    # Every night at 02:30 server time.
+    entrypoint: ["/bin/sh", "-c", "while true; do now=$$(date +%H%M); if [ \"$$now\" = 0230 ]; then sh /backup.sh || echo 'backup failed'; sleep 60; fi; sleep 30; done"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db:
+  uploads:

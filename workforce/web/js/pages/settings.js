@@ -52,7 +52,7 @@ export const settingsPage = {
         ${card('more', t('moreSettings'), '', html`<div class="listbox">
           ${can('permissions.manage') ? html`<a class="row" href="#/permissions"><span class="mid"><span class="t1">${t('rolesPermissions')}</span></span><span class="chev">${ICON.chev}</span></a>` : ''}
           <a class="row" href="#/account"><span class="mid"><span class="t1">${t('notificationSettings')}</span></span><span class="chev">${ICON.chev}</span></a></div>`)}
-        ${can('owners.manage') ? card('imp', t('importOldApp'), t('importOldAppBody'), html`<input type="file" accept="application/json" id="impfile" hidden><button class="btn" type="button" id="imp">${ICON.download}${t('chooseExportFile')}</button><p class="small" id="impres"></p>`) : ''}
+        ${can('owners.manage') ? card('imp', t('importOldApp'), t('importOldAppBody'), html`<input type="file" accept=".csv,text/csv,application/json,.json" id="impfile" hidden><button class="btn" type="button" id="imp">${ICON.download}${t('chooseExportFile')}</button><p class="small" id="impres"></p>`) : ''}
       </div></div>`);
     const save = async (patch) => { await api.put(bpath('/settings'), patch); S.settingsFor = null; settingsPage.render(view); };
     const forms = {
@@ -135,7 +135,9 @@ export const settingsPage = {
       const btn = $('#imp', view);
       busy(btn);
       try {
-        const data = JSON.parse(await f.text());
+        // The app's "Export CSV" file, or a full JSON export.
+        const text = await f.text();
+        const data = /^\s*[[{]/.test(text) ? JSON.parse(text) : { csv: text };
         const r = await api.post(bpath('/import/expenses-app'), data);
         mount($('#impres', view), html`${t('importResult', { n: r.imported, s: r.salaries, skipped: r.skippedRejected, again: r.alreadyImported })}`);
         toast(t('importDone'));

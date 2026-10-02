@@ -3,6 +3,7 @@
 import { forbidden, notFound } from '../lib/errors.js';
 import { assertRange, auditB, business, managedScope, scopeSql } from '../lib/context.js';
 import { toCsv, toXlsx } from '../lib/export.js';
+import { rateLimit } from '../lib/rate-limit.js';
 import { loadPermissions } from '../auth/permissions.js';
 import { listBudgets, profitAndLoss } from './finance.js';
 import { saveGenerated } from './documents.js';
@@ -221,6 +222,8 @@ export async function requestExport(app, req, type, { format, locale, ...filters
   checkAccess(req, type);
   if (!req.member.permissions.has('reports.export')) throw forbidden();
   assertRange(filters.from, filters.to);
+  // Each export is real work in the background; 60 an hour per person is plenty.
+  await rateLimit(app.db, `export:${req.auth.user.id}`, 60, 3600);
   const { rows: [job] } = await app.db.query(
     'INSERT INTO report_jobs (business_id, requested_by, report, format, params) VALUES ($1, $2, $3, $4, $5) RETURNING id, status',
     [req.member.businessId, req.auth.user.id, type, format, JSON.stringify({ ...filters, locale })]);

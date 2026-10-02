@@ -95,11 +95,13 @@ export default async function peopleRoutes(app) {
   }, async (req) => { await people.deleteMember(app, req, req.params.membershipId, req.body); return ok; });
 
   // ----- documents -----
+  // Files arrive base64-encoded (4 bytes for every 3), plus a little JSON.
+  const uploadBody = Math.ceil((app.config.maxUploadBytes * 4) / 3) + 64 * 1024;
   app.post('/documents', {
-    bodyLimit: 15 * 1024 * 1024,
+    bodyLimit: uploadBody,
     schema: {
       params: params(),
-      body: obj({ data: { type: 'string', maxLength: 15 * 1024 * 1024 }, filename: str(120), kind: oneOf('receipt', 'contract', 'document'), membershipId: optUuid }, ['data', 'filename', 'kind']),
+      body: obj({ data: { type: 'string', maxLength: uploadBody }, filename: str(120), kind: oneOf('receipt', 'contract', 'document'), membershipId: optUuid }, ['data', 'filename', 'kind']),
     },
   }, async (req, reply) => {
     const { membershipId, kind } = req.body;
