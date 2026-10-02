@@ -1,0 +1,276 @@
+# Workforce platform: architecture and roadmap
+
+This document covers the ten steps that section 50 of the master specification
+requires before implementation. It is the reference for every phase. Update it
+when a decision changes.
+
+---
+
+## 1. What exists today
+
+The repository holds two unrelated things.
+
+| Part | What it is | Runtime |
+| --- | --- | --- |
+| `src/`, `dist/`, `gulpfile.mjs` | The upstream HTML5 Boilerplate template. It has no application code. | Static files, built with gulp/webpack |
+| `expenses-app/index.html` | The live **Business Expenses** app, copied from the Claude artifact | Claude artifact runtime |
+
+### The Business Expenses app
+
+| Layer | How it works now |
+| --- | --- |
+| Frontend | One 93 KB HTML file with vanilla JS (no framework or build step), hand-written components, Arabic/English with full RTL, and an IQD currency format |
+| Backend | None. All logic runs in the browser. |
+| Database | The artifact's shared document store (`claude.use("db")`), a Firestore-like tree with path rules: `expenses/{self}`, `members`, `approvals`, `config/*`, `payroll/*` |
+| Authentication | Claude accounts. The person opening the artifact is the user. |
+| Roles | The artifact's share levels: owner = artifact owner, admin = Editor, member = Contributor |
+| Files | Receipts are compressed in the browser to JPEG under 180 KB and stored as base64 inside database documents |
+| Exports | CSV through the `downloads` capability |
+| Deployment | Hosted by Claude at the artifact URL |
+
+Features it already has: expense logging, 14 categories, receipt photos,
+monthly budgets with alerts at 80% and 100%, reports and charts, CSV export,
+an approval flow (submitted → approved/rejected → reimbursed, with admin
+expenses approved automatically), and an owner-only payroll section
+(employees, base pay + allowances − deductions, monthly pay runs).
+
+### Why it can't host this specification
+
+The specification requires things the artifact runtime cannot provide:
+
+- server-side permission checks (§30), beyond path-level read and write rules
+- its own passwords, email and SMS verification, OTP, 2FA and sessions (§17, §18)
+- financial calculations on the backend (§48); today all totals are computed in the browser
+- rate limiting, background jobs, scheduled recurring expenses and notifications
+- relational integrity (foreign keys), an immutable audit log, and backups (§28, §44)
+- separate businesses with isolated data (§36)
+
+**Decision:** build a real backend with PostgreSQL in `workforce/`. The current
+artifact keeps running unchanged until the data importer (Phase 8) moves its
+records across. Nothing that works today is removed.
+
+---
+
+## 2. Technology choices
+
+| Concern | Choice | Reason |
+| --- | --- | --- |
+| Runtime | Node.js 22 (already required by the repo) | One language front and back. The repo already uses Node tooling. |
+| HTTP | Fastify | Fast, with built-in JSON-schema validation for every request body (§30 input validation) |
+| Database | PostgreSQL 16 | Relational, transactional, `NUMERIC`, row-level locking, mature backups |
+| DB access | `pg` with hand-written parameterised SQL | Every query is parameterised (SQL injection), with no ORM to hide what runs |
+| Passwords | argon2id (`argon2`) | The current OWASP recommendation |
+| Sessions | Opaque random tokens in an `HttpOnly` cookie, stored hashed | Revocable (logout everywhere), unlike stateless JWTs |
+| Frontend | Vanilla ES modules, no build step | Matches the existing app and reuses its components and design system directly. Revisit at Phase 11 if the page count makes a framework worth it. |
+| Charts (Phase 11) | Chart.js, self-hosted | Accessible, responsive, MIT licensed, no CDN dependency |
+| Tests | Mocha (already in the repo) against a real PostgreSQL | Authorisation bugs hide in SQL, so tests use the real database |
+| Email | SMTP (nodemailer) or the dev outbox | Works with any provider |
+| SMS | Twilio REST or the dev outbox | Configured by environment variables |
+
+---
+
+## 3. What can be reused
+
+From `expenses-app/index.html`:
+
+- **Design system:** colour tokens with light and dark themes, motion tokens with reduced-motion handling, the banknote hero card, bottom sheet, toasts, skeletons, keyed animated lists, count-up numbers, animated bars
+- **Arabic/English strings and RTL handling**, locale-aware number and date formatting, and IQD formatting. The current users work in Arabic, so the new platform is bilingual from day one.
+- **Domain model:** the 14 categories (including Iraq-specific ones such as generator), the approval states, budget thresholds, the payroll formula, payment methods (cash, card, bank transfer, mobile wallet)
+- **Client-side receipt compression** (it reduces upload size; the server still validates)
+- **CSV export conventions** (UTF-8 BOM so Excel reads Arabic correctly)
+- **The data itself:** an importer (Phase 8) maps artifact records into the new tables
+
+---
+
+## 4. What needs to be added
+
+Everything in the specification that the artifact doesn't do: accounts with
+passwords and verification, roles and granular permissions, separate
+businesses, departments, employee profiles, shifts, schedules, requests,
+swaps, attendance, hourly and overtime payroll, employee-versus-business
+expense separation, revenue, P&L, the analytics centre, notifications,
+PDF/Excel reports, an audit log, budgets across all spending, smart alerts,
+global search and backups.
+
+### Additions not in the specification, and why
+
+| Addition | Why it's necessary |
+| --- | --- |
+| **CSRF token** on every state-changing request | Cookie sessions are open to cross-site request forgery. SameSite alone isn't enough for older browsers. |
+| **Append-only audit log**, enforced by a database trigger | An audit log an admin can edit can't be trusted (§28) |
+| **Locked payroll periods** | Once a pay period is paid, editing it would silently change past reports. Corrections are posted as adjustments. (accounting integrity, §48) |
+| **Reversals instead of edits for financial records** | §48 asks for transaction history. Each change to a posted amount creates a linked history row. |
+| **Idempotency keys** on financial POSTs | A retried request on a weak mobile connection must not record an expense twice |
+| **Money as integer minor units** (`BIGINT`) plus a currency exponent per business | No floating-point errors (§48). IQD has 0 decimals and USD has 2. |
+| **UTC storage plus a time zone per business** | Shifts that cross midnight or a DST change must calculate the right hours |
+| **Outbox for emails and SMS** | A provider outage must not lose an invitation or verification. Messages are queued and retried. |
+| **2FA recovery codes** | Without them, a lost phone locks the owner out of their business (§17, account recovery) |
+| **Tenant-isolation tests** | §36: one business's data must never appear in another's. This is checked on every endpoint. |
+| **Request IDs in logs and error responses** | Users see a friendly message and support can find the exact server log (§43) |
+| **Arabic/RTL from day one** | The existing users work in Arabic |
+| **Database migrations** | The schema will change across 16 phases without losing data |
+
+---
+
+## 5. Database design
+
+Conventions:
+
+- Primary keys are `uuid`. Every business-owned table has `business_id` with a foreign key, and every query filters by it.
+- `created_at` and `updated_at` are `timestamptz`, stored in UTC.
+- Important records are soft-deleted with `archived_at` (§21). Hard deletes are owner-only and audited.
+- Money is stored as `BIGINT` minor units with a `currency char(3)`. Rates use `NUMERIC(12,4)`.
+- History tables keep the previous state (shifts, pay rates, financial records).
+- Indexes cover `(business_id, <date>)` for every list, report and chart query.
+
+| Table | Phase | Purpose |
+| --- | --- | --- |
+| `businesses` | 1 | Name, currency, currency exponent, time zone, locale, settings |
+| `users` | 1 | A global identity: email, phone, argon2id hash, verification timestamps, 2FA |
+| `memberships` | 1 | Links a user to a business with a role (`owner`/`manager`/`employee`) and status (`active`/`suspended`/`terminated`/`archived`). This is the spec's "employees/managers": one person can belong to several businesses. |
+| `role_permissions` | 1 | The owner's overrides of default permissions for each role |
+| `membership_permissions` | 1 | Per-person grants or denials (for example, one manager allowed to see payroll) |
+| `invitations` | 1 | Token hash, role, intended profile, expiry, accepted/revoked |
+| `verification_tokens` | 1 | Email codes, SMS OTP, password reset and 2FA login challenges, with expiry and attempt counters |
+| `sessions` | 1 | Token hash, CSRF token, device, IP, last seen, expiry, revoked |
+| `rate_limits` | 1 | Fixed-window counters per key (IP, identifier) |
+| `audit_logs` | 1 | Actor, action, target, before/after, IP, user agent. Append-only. |
+| `notifications` | 1 (table), 12 (features) | In-app notifications per user |
+| `outbound_messages` | 1 | Email/SMS outbox with status and retries |
+| `departments` | 2 | Name, manager, archived |
+| `employee_profiles` | 2 | Employee number, job title, department, manager, start date, pay type, contact details (encrypted), emergency contact |
+| `pay_rates` | 2 | Rate history with effective dates. A rate is never overwritten. |
+| `documents` | 2 | Private file metadata. Files live in private storage and are served only through permission-checked endpoints (§35). |
+| `locations`, `schedules`, `shifts` | 3 | Published timetables. Shifts store start/end in UTC, breaks, department and location. |
+| `shift_history` | 3 | Every change: old values, new values, who, when, why, approval status (§4) |
+| `availability` | 3 | Employee unavailability, used for swap and schedule validation |
+| `shift_requests` | 4 | Change, time-off, offer and pickup requests with status |
+| `shift_swaps` | 4 | Two-party swap: offer, counterparty response, approval, applied |
+| `attendance` | 5 | Clock in/out, breaks, source, manager adjustments with history |
+| `pay_periods`, `payroll_runs`, `payroll_items` | 6 | Period, status (draft → approved → paid → locked), line items (base, overtime, bonus, deduction, reimbursement) |
+| `employee_expenses` | 7 | Submitted work expenses with status flow and receipt document |
+| `approval_rules`, `approvals` | 7 | Configurable multi-step approvals (§34) |
+| `expense_categories` | 8 | Built-in and custom categories, fixed or operating |
+| `business_expenses`, `recurring_expenses` | 8 | Ledger plus recurrence rules (daily → yearly, custom) |
+| `revenue_categories`, `revenues` | 9 | Income, refunds and adjustments |
+| `budgets` | 10 | Per category and period. Payroll is a category. |
+| `alert_rules`, `alerts` | 11 | Smart-alert thresholds and fired alerts |
+| `report_jobs` | 13 | Background PDF/Excel generation |
+
+---
+
+## 6. API design
+
+- REST/JSON under `/api`. Everything business-specific lives under
+  `/api/b/:businessId/…`, where the server checks membership, active status and
+  the specific permission on **every** request.
+- Unsafe methods (POST, PUT, PATCH, DELETE) require the `X-CSRF-Token` header.
+- Errors look like `{ "error": { "code", "message", "requestId" } }`. Messages
+  are user-safe and never contain stack traces or SQL (§43).
+- Lists use limit and cursor pagination, filters and sorting allow-listed per endpoint (§42).
+- Every request body is validated by a JSON schema with `additionalProperties: false`.
+
+Phase 1 endpoints:
+
+| Method and path | Purpose |
+| --- | --- |
+| `POST /api/auth/register` | Create a business and its owner (can be turned off with `ALLOW_BUSINESS_SIGNUP=false`) |
+| `POST /api/auth/login`, `POST /api/auth/login/2fa` | Sign in with email or phone and a password, then 2FA if enabled |
+| `POST /api/auth/logout`, `POST /api/auth/logout-all` | End this session, or every session |
+| `GET /api/auth/me` | Current user, businesses, effective permissions, CSRF token |
+| `POST /api/auth/verify/{email,phone}/request`, `POST /api/auth/verify/{email,phone}` | Send and confirm verification codes |
+| `POST /api/auth/password/forgot`, `POST /api/auth/password/reset`, `POST /api/auth/password/change` | Password recovery and change |
+| `GET /api/auth/sessions`, `DELETE /api/auth/sessions/:id` | List devices and sign one out |
+| `POST /api/auth/2fa/setup`, `POST /api/auth/2fa/enable`, `POST /api/auth/2fa/disable` | Authenticator-app 2FA with recovery codes |
+| `GET /api/invitations/:token`, `POST /api/invitations/accept` | Accept an invitation and set a password |
+| `GET/POST /api/b/:bid/invitations`, `POST …/:id/resend`, `POST …/:id/revoke` | Invite employees and managers (owner) |
+| `GET /api/b/:bid/members` | Team list (paginated, searchable) |
+| `POST /api/b/:bid/members/:mid/role` | Make manager or remove manager (owner) |
+| `POST /api/b/:bid/members/:mid/{suspend,reactivate}` | Suspend or reactivate access |
+| `GET/PUT /api/b/:bid/permissions`, `PUT /api/b/:bid/members/:mid/permissions` | Role defaults and per-person permission overrides (owner) |
+| `GET /api/b/:bid/audit-logs` | Audit history (owner, or managers if granted) |
+
+Later phases add `/api/b/:bid/{departments,employees,shifts,schedules,
+shift-requests,swaps,attendance,payroll,expenses,business-expenses,revenue,
+budgets,reports,analytics,search,notifications,settings}` following the same
+rules.
+
+---
+
+## 7. Frontend pages and components
+
+A single shell app served from `web/` with role-based navigation. The mobile
+bottom bar holds the most-used actions for each role (§38, §39).
+
+| Role | Pages |
+| --- | --- |
+| Everyone | Sign in, 2FA, accept invitation, verify email/phone, forgot/reset password, profile, security (sessions, password, 2FA), notifications |
+| Employee | Today, My schedule, Requests and swaps, My pay, My expenses (+ Add expense), Profile |
+| Manager | Today's staffing, Schedule builder, Approvals inbox (requests, swaps, expenses), Attendance, Team, Department reports |
+| Owner | "How is my business doing?" dashboard, Finance (expenses, revenue, P&L, budgets), Analytics centre, Payroll, Team, Reports, Audit log, Settings (business, departments, permissions, payroll, categories, approvals, notifications, authentication) |
+
+Shared components come from the existing app: sheet, toast, skeleton,
+animated list, stat tile, banknote hero card and bars. New ones: data table
+(sort, filter, paginate), confirm dialog with typed confirmation for
+destructive actions, date-range picker, chart card, status pill, empty and
+error states.
+
+---
+
+## 8. Security changes
+
+Everything in §30, applied as follows.
+
+- **Authentication:** argon2id hashes, opaque session tokens stored as SHA-256, `HttpOnly` + `Secure` + `SameSite=Lax` cookies, idle and absolute session expiry, revocation for one device or all, optional TOTP 2FA with hashed recovery codes, and all sessions revoked on password reset.
+- **Verification:** 6-digit codes stored hashed, 10-minute expiry, 5 attempts, resend throttling, and generic responses so accounts can't be discovered by guessing.
+- **Authorisation:** server-side permission resolution on every request. Owner-only powers (business deletion, owner management, permission management, security settings, hard deletes) can't be delegated in code, so a manager can't grant themselves owner rights. Every query is filtered by business.
+- **Rate limiting:** stored in Postgres so it works across several server instances, applied per IP and per account identifier.
+- **Input and output:** JSON-schema validation; parameterised SQL; HTML-escaped output in the frontend (no `innerHTML` with user data unescaped); a strict Content-Security-Policy through helmet.
+- **CSRF:** a per-session token, required for every unsafe method.
+- **Files (Phase 2/7):** private storage, MIME sniffing plus extension allow-list, size limits, random object names, downloads only through permission-checked endpoints.
+- **Encryption:** TLS in transit; AES-256-GCM for 2FA secrets and sensitive profile fields; encrypted database backups.
+- **Audit:** append-only `audit_logs`, protected by a trigger, visible only to owners or roles granted `audit.view`.
+- **Backups (Phase 16):** daily `pg_dump` plus continuous WAL archiving to separate encrypted storage, 30-day retention, and a restore drill each quarter; document storage versioned and backed up separately.
+
+---
+
+## 9. Roadmap
+
+Each phase ships with migrations, API, UI, tests and an update to this document.
+
+| # | Phase | Main deliverables | Status |
+| --- | --- | --- | --- |
+| 1 | Authentication, users, roles, permissions | Registration, invitations, verification, sign-in, 2FA, sessions, password recovery, permission engine, make/remove manager, suspend, audit foundation, Arabic/English shell UI | **Done** |
+| 2 | Employee management | Departments, profiles, pay-rate history, documents, termination flow (disable sign-in, cancel future shifts, keep history), archive vs delete | Planned |
+| 3 | Schedules and shifts | Timetables, shift assignment, shift history, availability, overlap and hour-limit checks | Planned |
+| 4 | Shift requests and swaps | Change, time-off, offer and pickup requests; the two-party swap workflow with validation | Planned |
+| 5 | Attendance | Clock in/out, breaks, missed shifts, adjustments with history | Planned |
+| 6 | Payroll | Pay periods, hourly/salaried/overtime, bonuses, deductions, reimbursements, paid/pending/review status, locked periods | Planned |
+| 7 | Employee expenses | Submission, receipts, configurable approval workflow, reimbursement into payroll | Planned |
+| 8 | Business expenses | Ledger, categories, recurring expenses, **importer from the current expenses app** | Planned |
+| 9 | Revenue | Income, refunds, adjustments | Planned |
+| 10 | Profit and loss, budgets | Server-calculated P&L, labour cost, budget vs actual | Planned |
+| 11 | Analytics and charts | Owner dashboard, analytics centre, drill-downs, date filters, smart alerts | Planned |
+| 12 | Notifications | In-app, email and SMS for each event in §22, with preferences | Planned |
+| 13 | Reports and export | All §27 reports; CSV, Excel and PDF; background jobs | Planned |
+| 14 | Audit log UI | Search and filter audit history, plus coverage for every phase | Planned |
+| 15 | Security hardening | Threat review, penetration-test checklist, dependency audit, encryption of sensitive fields | Planned |
+| 16 | Testing, performance, deployment | Load tests, indexes review, backups, CI, production hosting | Planned |
+
+### Phase 1 notes
+
+- Delivered as listed above, with 27 server tests and a browser walkthrough at phone and desktop sizes in both languages.
+- Left for later phases on purpose: changing your own email or phone (Phase 2 profile), notification preferences and email/SMS fan-out for in-app notifications (Phase 12), sign-in history shown to the user (Phase 14).
+- Hosting is not chosen yet (Phase 16). The app needs a Node.js host and a managed PostgreSQL with backups.
+
+### Importing the current expenses app (Phase 8)
+
+The live artifact's data differs slightly from the expense skill's reference
+model, so the importer must accept both shapes:
+
+- Approvals are stored at `approvals/<uid>__<expenseId>` (a flat collection), not `approvals/items/...`.
+- Admin-created expenses are marked with `auto: true` on the approval record, not `autoApproved` on the expense.
+- Receipts are base64 JPEGs in `expenses/<uid>/receipts/<expenseId>`; they move to private file storage.
+- People are Claude account ids. Each one is matched to an invited member before import, and the owner confirms the mapping.
+- Amounts are already integer IQD with 0 decimals, which maps directly to `BIGINT` minor units.
+

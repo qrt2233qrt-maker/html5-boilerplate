@@ -1,0 +1,29 @@
+{
+  "name": "workforce",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Workforce management, employee portal and business finance platform.",
+  "type": "module",
+  "main": "server/index.js",
+  "engines": {
+    "node": ">=22.9"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server/index.js",
+    "migrate": "node --env-file-if-exists=.env server/db/migrate.js",
+    "test": "mocha --timeout 20000 'test/**/*.test.js'"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.1.2",
+    "@fastify/helmet": "^13.1.1",
+    "@fastify/static": "^10.1.5",
+    "argon2": "^0.45.1",
+    "fastify": "^5.12.5",
+    "nodemailer": "^10.0.13",
+    "pg": "^8.23.1",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "mocha": "^12.0.3"
+  }
+}

@@ -27,4 +27,11 @@ export default defineConfig([
       semi: ['error', 'always'],
     },
   },
+  {
+    // The workforce server runs on Node 22 and uses current syntax.
+    files: ['workforce/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+    },
+  },
 ]);
