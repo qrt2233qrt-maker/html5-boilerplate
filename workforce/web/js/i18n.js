@@ -422,7 +422,9 @@ const ar = {
 // Earlier modules' strings win over the operations file where keys overlap.
 const STR = { en: { ...enOps, ...en }, ar: { ...arOps, ...ar } };
 
-export let LANG = LS.get('lang') || ((navigator.language || '').toLowerCase().startsWith('en') ? 'en' : 'ar');
+// A stored value that isn't a known language (an old or edited setting) is ignored.
+const saved = LS.get('lang');
+export let LANG = saved in STR ? saved : ((navigator.language || '').toLowerCase().startsWith('en') ? 'en' : 'ar');
 
 export function t(key, vars) {
   let s = STR[LANG][key] ?? STR.en[key] ?? key;
