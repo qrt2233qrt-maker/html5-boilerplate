@@ -4,7 +4,7 @@ import * as pay from '../services/payroll.js';
 import { requirePermission } from '../auth/session.js';
 import { forbidden } from '../lib/errors.js';
 import { idempotent } from '../lib/context.js';
-import { arr, bool, date, idParams, int, money, obj, oneOf, optStr, optUuid, params, range, signedMoney, str, uuid } from '../lib/schema.js';
+import { arr, bool, date, idParams, int, money, obj, oneOf, optDate, optStr, optUuid, params, range, signedMoney, str, uuid } from '../lib/schema.js';
 
 const ok = { ok: true };
 const p = (k) => requirePermission(k);
@@ -31,8 +31,11 @@ export default async function financeRoutes(app) {
   // ----- business expenses -----
   app.get('/business-expenses', { preHandler: p('business_expenses.view'), schema: { params: params(), querystring: listQuery } },
     async (req) => fin.listBusinessExpenses(app, req, req.query));
-  const bBody = { amount: money, spentOn: date, categoryId: uuid, vendor: optStr(120), description: optStr(300), paymentMethod: optStr(40), departmentId: optUuid, documentId: optUuid, notes: optStr(1000) };
-  app.post('/business-expenses', { preHandler: p('business_expenses.manage'), schema: { params: params(), body: obj(bBody, ['amount', 'spentOn', 'categoryId']) } },
+  const bBody = {
+    amount: money, spentOn: date, categoryId: uuid, vendor: optStr(120), description: optStr(300), paymentMethod: optStr(40), departmentId: optUuid, documentId: optUuid, notes: optStr(1000),
+    quantity: { type: 'number', exclusiveMinimum: 0, maximum: 1e9 }, unit: optStr(20), unitPrice: money, paid: bool, dueOn: optDate,
+  };
+  app.post('/business-expenses', { preHandler: p('business_expenses.manage'), schema: { params: params(), body: obj(bBody, ['spentOn', 'categoryId']) } },
     async (req, reply) => reply.code(201).send(await idempotent(req, () => fin.createBusinessExpense(app, req, req.body))));
   app.put('/business-expenses/:id', { preHandler: p('business_expenses.manage'), schema: { params: idParams, body: obj({ ...bBody, reason: str(300) }, ['reason']) } },
     async (req) => fin.updateBusinessExpense(app, req, req.params.id, req.body));
@@ -40,6 +43,12 @@ export default async function financeRoutes(app) {
     async (req) => { await fin.archiveBusinessExpense(app, req, req.params.id, req.body); return ok; });
   app.get('/business-expenses/:id/history', { preHandler: p('business_expenses.view'), schema: { params: idParams } },
     async (req) => fin.recordHistory(app, req, 'business_expense', req.params.id));
+
+  app.get('/bills', { preHandler: p('business_expenses.view') }, async (req) => fin.listBills(app, req));
+  app.post('/business-expenses/:id/pay', { preHandler: p('business_expenses.manage'), schema: { params: idParams, body: obj({ paidOn: date, paymentMethod: optStr(40) }, ['paidOn']) } },
+    async (req) => fin.payBill(app, req, req.params.id, req.body));
+  app.get('/suppliers', { preHandler: p('business_expenses.view'), schema: { params: params(), querystring: obj(range, ['from', 'to']) } },
+    async (req) => fin.suppliers(app, req, req.query));
 
   // ----- recurring -----
   app.get('/recurring-expenses', { preHandler: p('business_expenses.view') }, async (req) => fin.listRecurring(app, req));
@@ -88,7 +97,27 @@ export default async function financeRoutes(app) {
   app.delete('/payroll/runs/:id/items/:itemId', { preHandler: p('payroll.manage'), schema: { params: params({ id: uuid, itemId: uuid }) } },
     async (req) => pay.removeItem(app, req, req.params.id, req.params.itemId));
   app.post('/payroll/runs/:id/finalize', { preHandler: p('payroll.manage'), schema: { params: idParams } }, async (req) => pay.finalize(app, req, req.params.id));
-  app.post('/payroll/runs/:id/reopen', { preHandler: p('payroll.manage'), schema: { params: idParams } }, async (req) => pay.reopen(app, req, req.params.id));
+  app.post('/payroll/runs/:id/reopen', { preHandler: p('payroll.manage'), schema: { params: idParams, body: obj({ reason: optStr(500) }) } },
+    async (req) => pay.reopen(app, req, req.params.id, req.body || {}));
+  app.get('/payroll/runs/:id/payslips/:membershipId', { schema: { params: params({ id: uuid, membershipId: uuid }) } },
+    async (req) => pay.payslip(app, req, req.params.id, req.params.membershipId));
+  // Regular allowances / deductions, and salary advances.
+  app.get('/members/:membershipId/pay-components', { preHandler: p('payroll.view'), schema: { params: params({ membershipId: uuid }) } },
+    async (req) => pay.listComponents(app, req, req.params.membershipId));
+  app.post('/members/:membershipId/pay-components', {
+    preHandler: p('payroll.manage'),
+    schema: { params: params({ membershipId: uuid }), body: obj({ kind: oneOf('allowance', 'deduction'), name: str(80), monthlyAmount: money, startsOn: date, endsOn: optDate }, ['kind', 'name', 'monthlyAmount', 'startsOn']) },
+  }, async (req, reply) => reply.code(201).send(await pay.addComponent(app, req, req.params.membershipId, req.body)));
+  app.delete('/members/:membershipId/pay-components/:id', { preHandler: p('payroll.manage'), schema: { params: params({ membershipId: uuid, id: uuid }) } },
+    async (req) => pay.endComponent(app, req, req.params.membershipId, req.params.id));
+  app.get('/payroll/advances', { preHandler: p('payroll.view'), schema: { params: params(), querystring: obj({ membershipId: uuid }) } },
+    async (req) => pay.listAdvances(app, req, req.query.membershipId ?? null));
+  app.post('/members/:membershipId/advances', {
+    preHandler: p('payroll.manage'),
+    schema: { params: params({ membershipId: uuid }), body: obj({ amount: money, instalment: money, givenOn: date, note: optStr(200) }, ['amount', 'instalment', 'givenOn']) },
+  }, async (req, reply) => reply.code(201).send(await pay.addAdvance(app, req, req.params.membershipId, req.body)));
+  app.post('/payroll/advances/:id/cancel', { preHandler: p('payroll.manage'), schema: { params: idParams } },
+    async (req) => pay.cancelAdvance(app, req, req.params.id));
   app.post('/payroll/runs/:id/review', { preHandler: p('payroll.manage'), schema: { params: idParams, body: obj({ membershipId: uuid, review: bool, note: optStr(300) }, ['membershipId', 'review']) } },
     async (req) => pay.setReview(app, req, req.params.id, req.body.membershipId, req.body));
   app.post('/payroll/runs/:id/pay', { preHandler: p('payroll.manage'), schema: { params: idParams, body: obj({ membershipIds: arr(uuid, 1000) }) } },

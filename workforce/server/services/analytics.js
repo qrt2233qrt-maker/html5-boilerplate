@@ -59,7 +59,7 @@ async function series(db, biz, from, to, bucket) {
        SELECT date_trunc($4, r.period_end)::date AS start, sum(i.amount) AS amount
          FROM payroll_runs r JOIN payroll_items i ON i.run_id = r.id
         WHERE r.business_id = $1 AND r.status IN ('finalized', 'paid') AND r.period_end BETWEEN $2 AND $3
-          AND i.kind IN ('base', 'overtime', 'trips', 'bonus', 'adjustment') GROUP BY 1
+          AND i.kind IN ('base', 'overtime', 'trips', 'allowance', 'bonus', 'adjustment') GROUP BY 1
      )
      SELECT b.start::text, coalesce(rev.amount, 0)::bigint AS revenue, coalesce(exp.amount, 0)::bigint AS expenses, coalesce(pay.amount, 0)::bigint AS payroll
        FROM b LEFT JOIN rev USING (start) LEFT JOIN exp USING (start) LEFT JOIN pay USING (start) ORDER BY b.start`,
@@ -118,7 +118,7 @@ export async function drilldown(app, req, key, { from, to }) {
   if (key === 'payroll') {
     sql = `SELECT r.period_end AS day, i.amount, u.name AS label, i.kind AS detail, r.id::text AS ref
              FROM payroll_runs r JOIN payroll_items i ON i.run_id = r.id JOIN memberships m ON m.id = i.membership_id JOIN users u ON u.id = m.user_id
-            WHERE r.business_id = $1 AND r.status IN ('finalized', 'paid') AND i.kind IN ('base', 'overtime', 'trips', 'bonus', 'adjustment')
+            WHERE r.business_id = $1 AND r.status IN ('finalized', 'paid') AND i.kind IN ('base', 'overtime', 'trips', 'allowance', 'bonus', 'adjustment')
               AND r.period_end BETWEEN $2 AND $3`;
     params = [biz.id];
   } else if (key === 'employee_reimbursements') {
@@ -170,7 +170,7 @@ async function sectionCosts(db, bizId, from, to) {
          FROM payroll_runs r JOIN payroll_items i ON i.run_id = r.id
          JOIN payroll_statements s ON s.run_id = i.run_id AND s.membership_id = i.membership_id
         WHERE r.business_id = $1 AND r.status IN ('finalized', 'paid') AND r.period_end BETWEEN $2 AND $3
-          AND i.kind IN ('base', 'overtime', 'trips', 'bonus', 'adjustment') GROUP BY 1
+          AND i.kind IN ('base', 'overtime', 'trips', 'allowance', 'bonus', 'adjustment') GROUP BY 1
      ), ids AS (SELECT department_id FROM exp UNION SELECT department_id FROM claims UNION SELECT department_id FROM labour)
      SELECT ids.department_id::text AS id, coalesce(exp.amount, 0)::bigint AS expenses, coalesce(claims.amount, 0)::bigint AS claims, coalesce(labour.amount, 0)::bigint AS labour
        FROM ids LEFT JOIN exp ON exp.department_id IS NOT DISTINCT FROM ids.department_id

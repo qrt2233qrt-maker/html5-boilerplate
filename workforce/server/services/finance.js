@@ -51,7 +51,18 @@ const expOut = (r) => ({
   categoryEn: r.name_en ?? null, categoryAr: r.name_ar ?? null, icon: r.icon ?? null, vendor: r.vendor, description: r.description,
   paymentMethod: r.payment_method, departmentId: r.department_id, departmentName: r.department_name ?? null, documentId: r.document_id,
   notes: r.notes, recurringId: r.recurring_id, source: r.source, createdAt: r.created_at, archivedAt: r.archived_at,
+  quantity: r.quantity === null || r.quantity === undefined ? null : Number(r.quantity), unit: r.unit ?? null, unitPrice: r.unit_price ?? null,
+  paid: r.paid ?? true, dueOn: r.due_on ? iso(r.due_on) : null, paidOn: r.paid_on ? iso(r.paid_on) : null,
 });
+
+// Amount from quantity × unit price when both are given (rounded to the
+// currency's smallest unit), otherwise the amount entered.
+function amountOf(input, current = null) {
+  const qty = input.quantity ?? current?.quantity ?? null;
+  const price = input.unitPrice ?? current?.unit_price ?? null;
+  if ((input.quantity !== undefined || input.unitPrice !== undefined) && qty && price) return Math.round(Number(qty) * Number(price));
+  return input.amount ?? null;
+}
 
 const EXP_SELECT = `SELECT x.*, c.key AS category_key, c.name_en, c.name_ar, c.icon, d.name AS department_name
   FROM business_expenses x JOIN expense_categories c ON c.id = x.category_id LEFT JOIN departments d ON d.id = x.department_id`;
@@ -88,14 +99,19 @@ export async function listBusinessExpenses(app, req, { from, to, categoryId, q, 
 
 export async function createBusinessExpense(app, req, input) {
   const biz = await business(req);
+  const amount = amountOf(input);
+  if (!amount || amount <= 0) throw badRequest('amount_required', 'Enter the amount, or the quantity and unit price.');
+  const paid = input.paid !== false;
   return transaction(app.db, async (db) => {
     await checkCategory(db, req, 'expense_categories', input.categoryId);
     await checkDoc(db, req, input.documentId);
     const { rows: [x] } = await db.query(
       `INSERT INTO business_expenses (business_id, amount, currency, spent_on, category_id, vendor, description, payment_method,
-         department_id, document_id, notes, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
-      [biz.id, input.amount, biz.currency, input.spentOn, input.categoryId, input.vendor ?? null, input.description ?? null,
-        input.paymentMethod ?? null, input.departmentId ?? null, input.documentId ?? null, input.notes ?? null, req.auth.user.id]);
+         department_id, document_id, notes, created_by, quantity, unit, unit_price, paid, due_on, paid_on)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *`,
+      [biz.id, amount, biz.currency, input.spentOn, input.categoryId, input.vendor?.trim() || null, input.description ?? null,
+        paid ? input.paymentMethod ?? null : null, input.departmentId ?? null, input.documentId ?? null, input.notes ?? null, req.auth.user.id,
+        input.quantity ?? null, input.unit ?? null, input.unitPrice ?? null, paid, paid ? null : input.dueOn ?? null, paid ? input.spentOn : null]);
     await history(db, req, 'business_expense', x.id, 'created', null, expOut(x));
     await auditB(db, req, { action: 'business_expense.created', targetType: 'business_expense', targetId: x.id, after: { amount: x.amount, spentOn: input.spentOn } });
     if (input.amount >= biz.settings.alerts.largeExpense) {
@@ -118,13 +134,85 @@ export async function updateBusinessExpense(app, req, id, input) {
       `UPDATE business_expenses SET amount = coalesce($2, amount), spent_on = coalesce($3, spent_on), category_id = coalesce($4, category_id),
          vendor = coalesce($5, vendor), description = coalesce($6, description), payment_method = coalesce($7, payment_method),
          department_id = CASE WHEN $8::boolean THEN $9::uuid ELSE department_id END, document_id = coalesce($10, document_id),
-         notes = coalesce($11, notes), updated_at = now() WHERE id = $1 RETURNING *`,
-      [id, input.amount ?? null, input.spentOn ?? null, input.categoryId ?? null, input.vendor ?? null, input.description ?? null,
-        input.paymentMethod ?? null, input.departmentId !== undefined, input.departmentId ?? null, input.documentId ?? null, input.notes ?? null]);
+         notes = coalesce($11, notes), quantity = CASE WHEN $12::boolean THEN $13::numeric ELSE quantity END, unit = CASE WHEN $12::boolean THEN $14 ELSE unit END,
+         unit_price = CASE WHEN $12::boolean THEN $15::bigint ELSE unit_price END,
+         due_on = CASE WHEN NOT paid AND $16::date IS NOT NULL THEN $16 ELSE due_on END, updated_at = now() WHERE id = $1 RETURNING *`,
+      [id, amountOf(input, x), input.spentOn ?? null, input.categoryId ?? null, input.vendor ?? null, input.description ?? null,
+        input.paymentMethod ?? null, input.departmentId !== undefined, input.departmentId ?? null, input.documentId ?? null, input.notes ?? null,
+        input.quantity !== undefined || input.unitPrice !== undefined, input.quantity ?? null, input.unit ?? null, input.unitPrice ?? null, input.dueOn ?? null]);
     await history(db, req, 'business_expense', id, 'updated', expOut(x), expOut(u), input.reason);
     await auditB(db, req, { action: 'business_expense.updated', targetType: 'business_expense', targetId: id, before: { amount: x.amount, spentOn: iso(x.spent_on) }, after: { amount: u.amount, spentOn: iso(u.spent_on), reason: input.reason } });
     return expOut(u);
   });
+}
+
+// ---------- bills to pay, suppliers ----------
+
+// Expenses recorded but not paid yet, soonest due first.
+export async function listBills(app, req) {
+  const biz = await business(req);
+  const now = await today(app.db, biz);
+  const { rows } = await app.db.query(`${EXP_SELECT} WHERE x.business_id = $1 AND NOT x.paid AND x.archived_at IS NULL
+    ORDER BY x.due_on NULLS LAST, x.spent_on`, [biz.id]);
+  const items = rows.map((r) => ({ ...expOut(r), overdue: !!r.due_on && iso(r.due_on) < now, dueSoon: !!r.due_on && iso(r.due_on) >= now && iso(r.due_on) <= addDaysIso(now, 7) }));
+  return {
+    items, total: items.reduce((a, x) => a + Number(x.amount), 0),
+    overdue: items.filter((x) => x.overdue).reduce((a, x) => a + Number(x.amount), 0), overdueCount: items.filter((x) => x.overdue).length,
+  };
+}
+const addDaysIso = (d, n) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
+
+export async function payBill(app, req, id, { paidOn, paymentMethod }) {
+  return transaction(app.db, async (db) => {
+    const { rows: [x] } = await db.query('SELECT * FROM business_expenses WHERE id = $1 AND business_id = $2 FOR UPDATE', [id, req.member.businessId]);
+    if (!x || x.archived_at) throw notFound();
+    if (x.paid) throw conflict('already_paid', 'This bill is already paid.');
+    const { rows: [u] } = await db.query(
+      'UPDATE business_expenses SET paid = true, paid_on = $2, payment_method = coalesce($3, payment_method), updated_at = now() WHERE id = $1 RETURNING *',
+      [id, paidOn, paymentMethod ?? null]);
+    await history(db, req, 'business_expense', id, 'updated', expOut(x), expOut(u), 'Paid');
+    await auditB(db, req, { action: 'business_expense.paid', targetType: 'business_expense', targetId: id, after: { amount: x.amount, paidOn } });
+    return expOut(u);
+  });
+}
+
+// What each supplier costs: totals, unpaid, last purchase, and the unit
+// prices of what you buy from them, so price rises stand out.
+export async function suppliers(app, req, { from, to }) {
+  assertRange(from, to);
+  const id = req.member.businessId;
+  const { rows } = await app.db.query(
+    `SELECT min(trim(x.vendor)) AS name, count(*)::int AS count, sum(x.amount)::bigint AS total,
+            coalesce(sum(x.amount) FILTER (WHERE NOT x.paid), 0)::bigint AS unpaid, max(x.spent_on)::text AS last, lower(trim(x.vendor)) AS key
+       FROM business_expenses x WHERE x.business_id = $1 AND x.archived_at IS NULL AND x.vendor IS NOT NULL AND trim(x.vendor) <> ''
+        AND x.spent_on BETWEEN $2 AND $3 GROUP BY lower(trim(x.vendor)) ORDER BY total DESC`, [id, from, to]);
+  // Each supplier's biggest category.
+  const { rows: cats } = await app.db.query(
+    `SELECT lower(trim(x.vendor)) AS key, c.name_en, c.name_ar, c.icon, sum(x.amount)::bigint AS total
+       FROM business_expenses x JOIN expense_categories c ON c.id = x.category_id
+      WHERE x.business_id = $1 AND x.archived_at IS NULL AND x.vendor IS NOT NULL AND x.spent_on BETWEEN $2 AND $3
+      GROUP BY 1, c.id ORDER BY total DESC`, [id, from, to]);
+  // Unit prices over the last year: latest vs the one before, per supplier and item.
+  const { rows: prices } = await app.db.query(
+    `SELECT trim(vendor) AS vendor, coalesce(nullif(trim(description), ''), '—') AS item, unit, unit_price, spent_on::text AS day
+       FROM business_expenses WHERE business_id = $1 AND archived_at IS NULL AND unit_price IS NOT NULL AND vendor IS NOT NULL
+        AND spent_on > $2::date - 365 ORDER BY spent_on DESC, created_at DESC`, [id, to]);
+  const seen = new Map();
+  for (const p of prices) {
+    const key = `${p.vendor.toLowerCase()}|${p.item.toLowerCase()}|${p.unit || ''}`;
+    if (!seen.has(key)) seen.set(key, { vendor: p.vendor, item: p.item, unit: p.unit, latest: Number(p.unit_price), latestOn: p.day, previous: null });
+    else if (seen.get(key).previous === null) { seen.get(key).previous = Number(p.unit_price); seen.get(key).previousOn = p.day; }
+  }
+  const priceList = [...seen.values()].map((x) => ({ ...x, change: x.previous ? (x.latest - x.previous) / x.previous : null }))
+    .sort((a, b) => Math.abs(b.change ?? 0) - Math.abs(a.change ?? 0));
+  return {
+    from, to,
+    suppliers: rows.map((r) => {
+      const c = cats.find((x) => x.key === r.key);
+      return { name: r.name, count: r.count, total: Number(r.total), unpaid: Number(r.unpaid), lastPurchase: r.last, topCategory: c ? { nameEn: c.name_en, nameAr: c.name_ar, icon: c.icon } : null };
+    }),
+    prices: priceList.slice(0, 50),
+  };
 }
 
 // Archive instead of delete (spec §21); restoring is possible.
@@ -343,7 +431,7 @@ export async function profitAndLoss(db, businessId, from, to) {
     `SELECT count(*)::int AS count, coalesce(sum(amount), 0)::bigint AS amount FROM employee_expenses
       WHERE business_id = $1 AND status IN ('approved', 'reimbursed') AND spent_on BETWEEN $2 AND $3`, [businessId, from, to]);
   const { rows: [pay] } = await db.query(
-    `SELECT coalesce(sum(i.amount) FILTER (WHERE i.kind IN ('base', 'trips', 'bonus', 'adjustment', 'overtime')), 0)::bigint AS gross,
+    `SELECT coalesce(sum(i.amount) FILTER (WHERE i.kind IN ('base', 'trips', 'allowance', 'bonus', 'adjustment', 'overtime')), 0)::bigint AS gross,
             coalesce(sum(i.amount) FILTER (WHERE i.kind = 'overtime'), 0)::bigint AS overtime,
             coalesce(sum(i.amount) FILTER (WHERE i.kind = 'bonus'), 0)::bigint AS bonuses,
             coalesce(sum(i.amount) FILTER (WHERE i.kind = 'deduction'), 0)::bigint AS deductions,

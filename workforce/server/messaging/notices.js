@@ -30,6 +30,8 @@ const T = {
   'finance.large_expense': ['A large expense was recorded', 'سُجّل مصروف كبير'],
   'salary.pending': ['Your pay for this period is ready', 'راتب هذه الفترة جاهز'],
   'salary.paid': ['Your pay has been paid', 'تم دفع راتبك'],
+  'salary.correcting': ['Your pay for a period is being corrected', 'يجري تصحيح راتبك لإحدى الفترات'],
+  'salary.advance': ['An advance on your pay was recorded', 'سُجّلت سلفة على راتبك'],
   'alert.payroll_increase': ['Payroll is up {pct}% on last month', 'ارتفعت الرواتب {pct}% عن الشهر الماضي'],
   'alert.revenue_drop': ['Revenue is down {pct}% on last month', 'انخفضت الإيرادات {pct}% عن الشهر الماضي'],
   'alert.category_increase': ['{nameEn} spending is up {pct}%', 'ارتفع إنفاق {nameAr} بنسبة {pct}%'],

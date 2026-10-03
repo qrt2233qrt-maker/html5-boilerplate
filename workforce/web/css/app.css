@@ -837,3 +837,31 @@ html[dir="rtl"] .chat-compose .iconbtn.primary svg { transform: scaleX(-1); }
   .scan-frame i, .clock-done .big-tick, .clock-done h2, .clock-done p, .burst i, .pill.live { animation: none; }
   .clock-done .big-tick svg { animation: none; stroke-dashoffset: 0; }
 }
+
+/* ---------- payslip, advances ---------- */
+.payslip { display: grid; gap: 12px; }
+.ps-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.ps-head small, .ps-person small { display: block; color: var(--ink-2); font-size: .82rem; }
+.ps-person { padding: 10px 12px; border-radius: 12px; background: var(--surface-2); }
+.ps-net { display: flex; justify-content: space-between; align-items: baseline; padding: 14px 16px; border-radius: 14px; color: #fff;
+  background: linear-gradient(135deg, var(--note), color-mix(in srgb, var(--pc0) 55%, var(--note))); }
+.ps-net b { font-size: 1.6rem; }
+.ps-lines td small { display: block; color: var(--ink-2); font-size: .78rem; }
+.ps-lines tr.minus td:last-child { color: var(--over); }
+.ps-lines tr.total td { border-top: 2px solid var(--line); }
+.ps-days summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
+.ps-days tr.muted td { color: var(--ink-2); }
+.progress { display: block; height: 6px; border-radius: 99px; background: var(--surface-2); overflow: hidden; margin-top: 6px; max-width: 220px; }
+.progress i { display: block; height: 100%; width: var(--w, 0%); background: linear-gradient(90deg, var(--pc2), var(--pc0)); border-radius: 99px; transition: width var(--dur-emph) var(--ease-out); }
+.avatar.ok { background: color-mix(in srgb, var(--pc2) 18%, var(--surface)); color: var(--pc2); font-size: 1.3rem; }
+.avatar.warn { background: color-mix(in srgb, var(--pc1) 18%, var(--surface)); color: var(--pc1); font-size: 1.3rem; }
+tr.clickable { cursor: pointer; }
+tr.clickable:hover td { background: var(--surface-2); }
+@media print {
+  body.print-sheet .app, body.print-sheet .sfoot, body.print-sheet .shead button, body.print-sheet .grab { display: none !important; }
+  body.print-sheet #sheet { position: static; box-shadow: none; max-height: none; width: 100%; transform: none; }
+  body.print-sheet .ps-days { display: block; } body.print-sheet .ps-days table { display: table; }
+}
+.row.bill.overdue { border-inline-start: 4px solid var(--over); }
+.row.bill.soon { border-inline-start: 4px solid var(--warn); }
+.kpi.bad b { color: var(--over); }

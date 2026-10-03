@@ -22,7 +22,7 @@ const linkFor = (n) => {
 
 export function noticeText(n) {
   const d = { ...n.data };
-  for (const k of ['amount', 'net', 'current', 'previous']) if (typeof d[k] === 'number') d[k] = money(d[k]);
+  for (const k of ['amount', 'net', 'current', 'previous', 'instalment']) if (typeof d[k] === 'number') d[k] = money(d[k]);
   return t(`n.${n.type}`, d);
 }
 

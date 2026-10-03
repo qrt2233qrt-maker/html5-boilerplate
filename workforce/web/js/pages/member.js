@@ -6,7 +6,7 @@ import { ICON } from '../icons.js';
 import { S, bpath, can, isOwner } from '../state.js';
 import { addDays, dateShort, dayLabel, money, num, payFreqLabel, payUnit, time, todayLocal } from '../fmt.js';
 import { docUrl, empty, formSheet, statusPill, uploadFile } from '../components.js';
-import { busy, skeletonRows, toast, toastError } from '../ui.js';
+import { busy, confirmDialog, skeletonRows, toast, toastError } from '../ui.js';
 import { $, html, initials, mount } from '../util.js';
 
 export const memberPage = {
@@ -110,16 +110,66 @@ function overview(host, m, { self, sensitive, editable, reload }) {
 }
 
 async function payTab(host, m, self, reload) {
-  const [rates, pay] = await Promise.all([
+  const manage = can('payroll.manage') && !self;
+  const [rates, pay, comps, advances] = await Promise.all([
     api.get(bpath(`/members/${m.membershipId}/pay-rates`)),
     self ? api.get(bpath('/me/pay')) : can('payroll.view') ? api.get(bpath(`/members/${m.membershipId}/pay`)) : null,
+    can('payroll.view') && !self ? api.get(bpath(`/members/${m.membershipId}/pay-components`)) : [],
+    can('payroll.view') && !self ? api.get(bpath(`/payroll/advances?membershipId=${m.membershipId}`)) : [],
   ]);
+  const activeComps = comps.filter((c) => !c.archivedAt);
   mount(host, html`<section class="panel"><div class="panel-head"><h2>${t('payRateHistory')}</h2>
       ${can('payroll.manage') && !self ? html`<button class="btn small primary" type="button" id="addrate">${t('changePay')}</button>` : ''}</div>
     ${rates.length ? html`<div class="listbox">${rates.map((r, i) => html`<div class="row"><span class="mid"><span class="t1 num">${money(r.rate)} ${payUnit(r.payType)}</span>
       <span class="t2">${payFreqLabel(r.frequency)} · ${t('fromDate', { date: dateShort(r.effectiveFrom) })}${r.note ? ` · ${r.note}` : ''}${r.createdBy ? ` · ${r.createdBy}` : ''}</span></span>${i === 0 ? html`<span class="pill ok">${t('current')}</span>` : ''}</div>`)}</div>` : empty(t('noPayRate'))}</section>
+    ${can('payroll.view') && !self ? html`<div class="cols"><section class="panel"><div class="panel-head"><h2>${t('allowancesAndDeductions')}</h2>
+        ${manage ? html`<button class="btn small" type="button" id="addcomp">${ICON.plus}${t('add')}</button>` : ''}</div>
+      ${activeComps.length ? html`<div class="listbox">${activeComps.map((c) => html`<div class="row"><span class="avatar ${c.kind === 'allowance' ? 'ok' : 'warn'}">${c.kind === 'allowance' ? '+' : '−'}</span>
+        <span class="mid"><span class="t1">${c.name}</span><span class="t2">${t(`comp_${c.kind}`)} · ${t('fromDate', { date: dateShort(c.startsOn) })}${c.endsOn ? ` – ${dateShort(c.endsOn)}` : ''}</span></span>
+        <span class="end num">${money(c.monthlyAmount)} <small class="muted">${t('perMonth')}</small></span>
+        ${manage ? html`<button class="btn small ghost" type="button" data-endcomp="${c.id}">${t('remove')}</button>` : ''}</div>`)}</div>` : html`<p class="muted">${t('noAllowances')}</p>`}
+      <p class="hint">${t('allowancesHint')}</p></section>
+    <section class="panel"><div class="panel-head"><h2>${t('advances')}</h2>
+        ${manage ? html`<button class="btn small" type="button" id="addadv">${ICON.plus}${t('giveAdvance')}</button>` : ''}</div>
+      ${advances.length ? html`<div class="listbox">${advances.map((a) => html`<div class="row ${a.cancelledAt ? 'muted' : ''}"><span class="mid">
+        <span class="t1 num">${money(a.amount)}${a.note ? ` · ${a.note}` : ''}</span>
+        <span class="t2">${t('advanceLine', { given: dateShort(a.givenOn), each: money(a.instalment) })}${a.cancelledAt ? ` · ${t('cancelled')}` : ''}</span>
+        <span class="progress"><i data-w="${a.amount ? (a.repaid / a.amount) * 100 : 0}"></i></span></span>
+        <span class="end"><b class="num">${money(a.left)}</b><span class="t2">${t('left')}</span></span>
+        ${manage && !a.cancelledAt && a.left > 0 ? html`<button class="btn small ghost" type="button" data-canceladv="${a.id}">${t('stopRepayments')}</button>` : ''}</div>`)}</div>` : html`<p class="muted">${t('noAdvances')}</p>`}
+      <p class="hint">${t('advancesHint')}</p></section></div>` : ''}
     ${pay ? html`<section class="panel"><h2>${t('payHistory')}</h2>${pay.history.length ? html`<div class="tablewrap"><table class="data"><thead><tr><th>${t('period')}</th><th>${t('hoursCol')}</th><th>${t('gross')}</th><th>${t('net')}</th><th>${t('status')}</th></tr></thead>
       <tbody>${pay.history.map((h) => html`<tr><td>${dateShort(h.periodStart)} – ${dateShort(h.periodEnd)}</td><td class="num">${num(h.hours)}</td><td class="num">${money(h.gross)}</td><td class="num">${money(h.net)}</td><td>${statusPill(h.status)}</td></tr>`)}</tbody></table></div>` : empty(t('noPayYet'))}</section>` : ''}`);
+  host.querySelectorAll('.progress i').forEach((x) => x.style.setProperty('--w', `${x.dataset.w}%`));
+  $('#addcomp', host)?.addEventListener('click', () => formSheet({
+    title: t('allowancesAndDeductions'), intro: t('allowancesHint'),
+    fields: [
+      { name: 'kind', label: t('type'), type: 'seg', full: true, value: 'allowance', options: [['allowance', t('comp_allowance')], ['deduction', t('comp_deduction')]] },
+      { name: 'name', label: t('name'), type: 'text', required: true, hint: t('compNameHint') },
+      { name: 'monthlyAmount', label: t('amountPerMonth'), type: 'money', required: true },
+      { name: 'startsOn', label: t('startDate'), type: 'date', value: todayLocal(), required: true },
+      { name: 'endsOn', label: t('endDate'), type: 'date', optional: true },
+    ],
+    onSubmit: async (v) => { await api.post(bpath(`/members/${m.membershipId}/pay-components`), { ...v, endsOn: v.endsOn || null }); reload(); },
+  }));
+  host.querySelectorAll('[data-endcomp]').forEach((b) => { b.onclick = async () => {
+    if (!(await confirmDialog({ title: t('removeAllowanceQ'), body: t('removeAllowanceBody'), confirm: t('remove'), danger: true }))) return;
+    await api.del(bpath(`/members/${m.membershipId}/pay-components/${b.dataset.endcomp}`)); reload();
+  }; });
+  $('#addadv', host)?.addEventListener('click', () => formSheet({
+    title: t('giveAdvance'), intro: t('advancesHint'),
+    fields: [
+      { name: 'amount', label: t('advanceAmount'), type: 'money', required: true },
+      { name: 'instalment', label: t('takeBackEachPayroll'), type: 'money', required: true },
+      { name: 'givenOn', label: t('date'), type: 'date', value: todayLocal(), required: true },
+      { name: 'note', label: t('note'), type: 'text', optional: true },
+    ],
+    onSubmit: async (v) => { await api.post(bpath(`/members/${m.membershipId}/advances`), { ...v, note: v.note || null }); reload(); },
+  }));
+  host.querySelectorAll('[data-canceladv]').forEach((b) => { b.onclick = async () => {
+    if (!(await confirmDialog({ title: t('stopRepaymentsQ'), body: t('stopRepaymentsBody'), confirm: t('stopRepayments'), danger: true }))) return;
+    await api.post(bpath(`/payroll/advances/${b.dataset.canceladv}/cancel`)); reload();
+  }; });
   $('#addrate', host)?.addEventListener('click', () => formSheet({
     title: t('changePay'), intro: t('changePayBody'),
     fields: [

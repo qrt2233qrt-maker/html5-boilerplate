@@ -19,6 +19,8 @@ export const financePage = {
   async render(view, { query }) {
     const tabs = [
       can('business_expenses.view') && ['expenses', t('expenses')],
+      can('business_expenses.view') && ['bills', t('billsToPay')],
+      can('business_expenses.view') && ['suppliers', t('suppliers')],
       can('business_expenses.view') && ['recurring', t('recurring')],
       can('revenue.view') && ['revenue', t('revenue')],
       (can('finance.view') || can('budgets.manage')) && ['budgets', t('budgets')],
@@ -31,6 +33,8 @@ export const financePage = {
     if (tab === 'expenses') return ledger(ctx, 'expense');
     if (tab === 'revenue') return ledger(ctx, 'revenue');
     if (tab === 'recurring') return recurring(ctx);
+    if (tab === 'bills') return bills(ctx);
+    if (tab === 'suppliers') return suppliers(ctx);
     if (tab === 'budgets') return budgets(ctx);
   },
 };
@@ -57,7 +61,7 @@ async function ledger(ctx, kind) {
     mount($('#rows', host), res.items.length ? html`<div class="tablewrap"><table class="data"><thead><tr><th>${t('date')}</th><th>${t('category')}</th>
       <th>${isExp ? t('vendor') : t('customerSource')}</th><th>${t('description')}</th><th>${t('amount')}</th><th></th></tr></thead>
       <tbody>${res.items.map((x) => html`<tr><td>${dateShort(isExp ? x.spentOn : x.receivedOn)}</td><td>${x.icon || ''} ${nm(x)}${x.source === 'recurring' ? html` <span class="pill">${t('recurringShort')}</span>` : ''}</td>
-        <td>${isExp ? x.vendor || '' : x.source || ''}</td><td>${x.description || ''}${x.documentId ? html` <a href="${docUrl(x.documentId)}" target="_blank" rel="noopener">📎</a>` : ''}</td>
+        <td>${isExp ? x.vendor || '' : x.source || ''}</td><td>${x.description || ''}${x.quantity ? html` <small class="muted num">${x.quantity} ${x.unit || ''} × ${money(x.unitPrice)}</small>` : ''}${isExp && !x.paid ? html` <span class="pill warn">${t('unpaid')}</span>` : ''}${x.documentId ? html` <a href="${docUrl(x.documentId)}" target="_blank" rel="noopener">📎</a>` : ''}</td>
         <td class="num ${x.kind === 'refund' ? 'bad' : ''}">${x.kind === 'refund' ? '− ' : ''}${money(x.amount)}</td>
         <td class="row-gap">${manage ? html`<button class="btn small ghost" type="button" data-edit="${x.id}">${t('edit')}</button><button class="btn small ghost" type="button" data-arch="${x.id}">${t('archive')}</button>` : ''}
           <button class="btn small ghost" type="button" data-hist="${x.id}">${t('history')}</button></td></tr>`)}</tbody></table></div>`
@@ -91,7 +95,12 @@ function editRecord(ctx, kind, x, reload) {
   formSheet({
     title: x ? t('edit') : isExp ? t('addBusinessExpense') : t('addRevenue'),
     fields: [
-      { name: 'amount', label: t('amount'), type: isExp ? 'money' : 'signedMoney', required: true, value: x?.amount, hint: isExp ? null : t('revenueAmountHint') },
+      { name: 'amount', label: t('amount'), type: isExp ? 'money' : 'signedMoney', required: !isExp, optional: isExp, value: x?.amount, hint: isExp ? t('amountOrQuantity') : t('revenueAmountHint') },
+      isExp ? { name: 'quantity', label: t('quantity'), type: 'text', optional: true, value: x?.quantity ?? '', attrs: 'inputmode="decimal"' } : null,
+      isExp ? { name: 'unit', label: t('unit'), type: 'text', optional: true, value: x?.unit || '', hint: t('unitHint') } : null,
+      isExp ? { name: 'unitPrice', label: t('unitPrice'), type: 'money', optional: true, value: x?.unitPrice ?? '' } : null,
+      isExp && !x ? { name: 'unpaid', label: t('notPaidYet'), type: 'checkbox', value: false } : null,
+      isExp && (!x || !x.paid) ? { name: 'dueOn', label: t('dueDate'), type: 'date', optional: true, value: x?.dueOn || '' } : null,
       { name: 'date', label: t('date'), type: 'date', required: true, value: (isExp ? x?.spentOn : x?.receivedOn) || todayLocal() },
       { name: 'categoryId', label: t('category'), type: 'select', required: true, value: x?.categoryId || '', options: cats.map((c) => [c.id, `${c.icon || ''} ${nm(c)}`]) },
       isExp ? { name: 'vendor', label: t('vendor'), type: 'text', optional: true, value: x?.vendor || '' } : { name: 'source', label: t('customerSource'), type: 'text', optional: true, value: x?.source || '' },
@@ -104,7 +113,13 @@ function editRecord(ctx, kind, x, reload) {
     ],
     onSubmit: async (v) => {
       const body = { amount: v.amount, categoryId: v.categoryId, description: v.description, paymentMethod: v.paymentMethod, notes: v.notes };
-      if (isExp) Object.assign(body, { spentOn: v.date, vendor: v.vendor, departmentId: v.departmentId || null, documentId: v.documentId || null });
+      if (isExp) {
+        const qty = v.quantity ? Number(String(v.quantity).replace(',', '.').replace(/[٠-٩]/g, (c) => '٠١٢٣٤٥٦٧٨٩'.indexOf(c))) : undefined;
+        Object.assign(body, { spentOn: v.date, vendor: v.vendor, departmentId: v.departmentId || null, documentId: v.documentId || null,
+          quantity: qty || undefined, unit: v.unit || undefined, unitPrice: v.unitPrice || undefined, dueOn: v.dueOn || undefined });
+        if (!x && v.unpaid) body.paid = false;
+        if (!body.amount && !(body.quantity && body.unitPrice)) throw Object.assign(new Error(t('amountOrQuantity')), { code: 'amount_required' });
+      }
       else Object.assign(body, { receivedOn: v.date, source: v.source });
       for (const k of Object.keys(body)) if (body[k] === undefined) delete body[k];
       const path = isExp ? '/business-expenses' : '/revenue';
@@ -216,4 +231,61 @@ async function budgets(ctx) {
       },
     });
   };
+}
+
+// ---------- bills to pay ----------
+
+async function bills(ctx) {
+  const { host } = ctx;
+  const manage = can('business_expenses.manage');
+  mount(host, skeletonRows(4));
+  const b = await api.get(bpath('/bills'));
+  if (!host.isConnected) return;
+  mount(host, html`<div class="kpis small">
+      <div class="kpi"><small>${t('unpaidTotal')}</small><b class="num">${money(b.total)}</b></div>
+      <div class="kpi ${b.overdueCount ? 'bad' : ''}"><small>${t('overdue')}</small><b class="num">${money(b.overdue)}</b><span class="muted small">${tn('billsN', b.overdueCount)}</span></div></div>
+    ${b.items.length ? html`<div class="listbox">${b.items.map((x) => html`<div class="row bill ${x.overdue ? 'overdue' : x.dueSoon ? 'soon' : ''}">
+      <span class="avatar">${x.icon || '🧾'}</span>
+      <span class="mid"><span class="t1">${x.vendor || nm(x)}${x.description ? ` · ${x.description}` : ''}</span>
+        <span class="t2">${dateShort(x.spentOn)}${x.dueOn ? ` · ${x.overdue ? t('wasDue', { date: dateShort(x.dueOn) }) : t('dueOn', { date: dateShort(x.dueOn) })}` : ''}</span></span>
+      <span class="end"><b class="num">${money(x.amount)}</b>${x.overdue ? html`<span class="pill over">${t('overdue')}</span>` : x.dueSoon ? html`<span class="pill warn">${t('dueSoon')}</span>` : ''}</span>
+      ${manage ? html`<button class="btn small primary" type="button" data-pay="${x.id}">${t('markBillPaid')}</button>` : ''}</div>`)}</div>`
+    : empty(t('noBills'), t('noBillsBody'))}`);
+  host.querySelectorAll('[data-pay]').forEach((btn) => { btn.onclick = () => formSheet({
+    title: t('markBillPaid'), submitLabel: t('markBillPaid'),
+    fields: [
+      { name: 'paidOn', label: t('date'), type: 'date', value: todayLocal(), required: true },
+      { name: 'paymentMethod', label: t('paymentMethod'), type: 'select', optional: true, options: methodOptions() },
+    ],
+    onSubmit: async (v) => { await api.post(bpath(`/business-expenses/${btn.dataset.pay}/pay`), { paidOn: v.paidOn, paymentMethod: v.paymentMethod || null }); toast(t('billPaid')); bills(ctx); },
+  }); });
+}
+
+// ---------- suppliers ----------
+
+async function suppliers(ctx) {
+  const { host } = ctx;
+  const range = rangeState('fin-suppliers');
+  mount(host, html`<div class="toolbar"><div id="range"></div></div><div id="sup">${skeletonRows(5)}</div>`);
+  const load = async () => {
+    const d = await api.get(bpath(`/suppliers?from=${range.from}&to=${range.to}`));
+    if (!host.isConnected) return;
+    const max = Math.max(1, ...d.suppliers.map((x) => x.total));
+    mount($('#sup', host), html`<div class="cols"><section class="panel"><h2>${t('suppliers')}</h2>
+      ${d.suppliers.length ? html`<div class="listbox">${d.suppliers.map((x) => html`<div class="row"><span class="avatar">${x.topCategory?.icon || '🏪'}</span>
+        <span class="mid"><span class="t1">${x.name}</span>
+          <span class="t2">${tn('purchasesN', x.count)} · ${t('lastPurchase', { date: dateShort(x.lastPurchase) })}${x.topCategory ? ` · ${nm(x.topCategory)}` : ''}</span>
+          <span class="progress"><i data-w="${(x.total / max) * 100}"></i></span></span>
+        <span class="end"><b class="num">${money(x.total)}</b>${x.unpaid ? html`<span class="pill warn num">${t('unpaid')} ${money(x.unpaid)}</span>` : ''}</span></div>`)}</div>`
+      : empty(t('noSuppliers'), t('noSuppliersBody'))}</section>
+      <section class="panel"><h2>${t('priceWatch')}</h2><p class="muted small">${t('priceWatchBody')}</p>
+      ${d.prices.length ? html`<div class="listbox">${d.prices.map((p) => html`<div class="row"><span class="mid"><span class="t1">${p.item}</span>
+          <span class="t2">${p.vendor} · ${dateShort(p.latestOn)}</span></span>
+        <span class="end"><b class="num">${money(p.latest)}${p.unit ? html` <small class="muted">/ ${p.unit}</small>` : ''}</b>
+          ${p.change === null ? '' : html`<span class="delta ${p.change > 0 ? 'bad' : p.change < 0 ? 'good' : ''}">${p.change > 0 ? '↑' : p.change < 0 ? '↓' : '='} ${pct(Math.abs(p.change), 0)}</span>`}</span></div>`)}</div>`
+      : html`<p class="muted">${t('noPrices')}</p>`}</section></div>`);
+    host.querySelectorAll('.progress i').forEach((x) => x.style.setProperty('--w', `${x.dataset.w}%`));
+  };
+  dateRangeBar($('#range', host), 'fin-suppliers', range, (r) => { Object.assign(range, r); load(); });
+  load().catch(toastError);
 }
