@@ -108,7 +108,7 @@ function todayPanel(week) {
         <b class="num">${time(todayShift.startsAt)} – ${time(todayShift.endsAt)}</b>
         <span class="muted">${[todayShift.departmentName, todayShift.locationName, todayShift.breakMinutes ? t('breakMin', { n: todayShift.breakMinutes }) : null].filter(Boolean).join(' · ')}</span>
       </div></div>` : html`<p class="muted">${t('noShiftToday')}</p>`}
-    <button class="btn ${clocked ? '' : 'primary'} block clock-btn" type="button" id="clock">${week.zoneRequired ? ICON.qr : ICON.clock}${clocked ? t('clockOut') : t('clockIn')}</button>
+    <button class="btn ${clocked ? '' : 'primary'} block clock-btn" type="button" id="clock">${week.zoneRequired ? (week.clock?.method === 'gps' ? ICON.pin : ICON.qr) : ICON.clock}${clocked ? t('clockOut') : t('clockIn')}</button>
   </section>`;
 }
 

@@ -24,8 +24,11 @@ async function canSee(req, id) {
   return can(req, 'members.view') && inScope(req, id);
 }
 
+// The rate in force on the business's own date (rates start on its local
+// date, which can be a day ahead of the server's).
 export const currentPaySql = `(SELECT row_to_json(p) FROM (SELECT pay_type AS "payType", rate, effective_from AS "effectiveFrom", frequency
-  FROM pay_rates WHERE membership_id = m.id AND effective_from <= CURRENT_DATE
+  FROM pay_rates WHERE membership_id = m.id
+   AND effective_from <= (now() AT TIME ZONE (SELECT timezone FROM businesses b WHERE b.id = m.business_id))::date
   ORDER BY effective_from DESC, created_at DESC LIMIT 1) p)`;
 
 export async function getMember(app, req, id) {

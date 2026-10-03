@@ -21,10 +21,10 @@ export function position() {
   });
 }
 
-// Clock in (or out) at the door: reads the position (when the business
-// checks it), then sends it with the code from the QR.
-export async function zoneClock({ out = false, locationId, code, breakMinutes = 0, checkLocation = true }) {
-  const where = { locationId, code, ...(checkLocation ? await position() : {}) };
+// Clock in (or out) at work: with the code from the door QR (plus the
+// position when the business checks it), or by position alone (gps).
+export async function zoneClock({ out = false, locationId, code, breakMinutes = 0, checkLocation = true, gps = false }) {
+  const where = gps ? await position() : { locationId, code, ...(checkLocation ? await position() : {}) };
   return out
     ? api.post(bpath('/attendance/clock-out'), { breakMinutes, ...where })
     : api.post(bpath('/attendance/clock-in'), where);
@@ -33,7 +33,7 @@ export async function zoneClock({ out = false, locationId, code, breakMinutes = 
 // Friendly text for location problems as well as the server's refusals.
 export function clockError(err) {
   if (err?.code?.startsWith?.('geo_') || err?.code?.startsWith?.('cam_')) return t(`e.${err.code}`);
-  if (err?.code === 'outside_zone' && err.details) return t('e.outside_zone_far', { m: err.details.distance, place: err.details.location });
+  if (err?.code === 'outside_zone' && err.details) return t('e.outside_zone_far', { m: err.details.distance, place: err.details.location, r: err.details.radius });
   return errorMessage(err);
 }
 
@@ -121,49 +121,58 @@ export function celebrate(host, { out, at }) {
   navigator.vibrate?.(out ? [30, 60, 30] : 40);
 }
 
-// The sheet behind the Clock in / Clock out buttons when the door is
-// required: scan the QR at the door with the camera.
+// The sheet behind the Clock in / Clock out buttons when being at work has
+// to be proven: scan the QR at the door, or (gps / either) use the phone's
+// position near the restaurant.
 export async function zoneSheet({ out, onDone, clock }) {
-  const cfg = clock || (await api.get(bpath('/me/week'))).clock || { checkLocation: true, typedCode: false };
+  const cfg = clock || (await api.get(bpath('/me/week'))).clock || { method: 'qr', checkLocation: true, typedCode: false };
+  const method = cfg.method || 'qr';
+  const scan = method !== 'gps';
   const sheet = openSheet({
     title: out ? t('clockOut') : t('clockIn'),
     body: html`${out ? html`<div class="field"><label class="label" for="z-brk">${t('breakMinutes')}</label>
         <input class="input" id="z-brk" type="number" min="0" max="600" value="0" inputmode="numeric"></div>` : ''}
-      <div class="scanner" id="scanner"><video id="z-video" aria-label="${t('cameraView')}"></video><span class="scan-frame" aria-hidden="true"><i></i></span>
-        <p class="scan-msg" id="z-msg" role="status">${t('pointAtQr')}</p></div>
+      ${scan ? html`<div class="scanner" id="scanner"><video id="z-video" aria-label="${t('cameraView')}"></video><span class="scan-frame" aria-hidden="true"><i></i></span>
+        <p class="scan-msg" id="z-msg" role="status">${t('pointAtQr')}</p></div>`
+        : html`<div class="gps-state" id="z-gps" role="status"><span class="gps-pin" aria-hidden="true">${ICON.pin}</span><p id="z-msg">${t('gpsClockHint')}</p></div>`}
       <div class="form-error" role="alert" id="z-err"></div>
-      ${cfg.typedCode ? html`<form id="zone-form" novalidate class="typed-code"><label class="label" for="z-code">${t('orTypeCode')}</label>
+      ${method !== 'qr' ? html`<button class="btn ${scan ? '' : 'primary'} block" type="button" id="z-gps-go">${ICON.pin}${scan ? t('useMyLocation') : (out ? t('clockOutHere') : t('clockInHere'))}</button>` : ''}
+      ${scan && cfg.typedCode ? html`<form id="zone-form" novalidate class="typed-code"><label class="label" for="z-code">${t('orTypeCode')}</label>
         <div class="row-gap"><input class="input code-input" id="z-code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" dir="ltr" placeholder="••••••">
         <button class="btn" type="submit">${t('continue')}</button></div></form>` : ''}
-      <p class="hint">${cfg.checkLocation ? t('locationPrivacy') : t('scanOnlyHint')}</p>`,
+      <p class="hint">${method === 'qr' ? (cfg.checkLocation ? t('locationPrivacy') : t('scanOnlyHint')) : method === 'gps' ? t('locationPrivacy') : t('eitherHint')}</p>`,
   });
   const err = $('#z-err', sheet);
   const msg = $('#z-msg', sheet);
+  const box = $('#scanner', sheet) || $('#z-gps', sheet);
   let busyNow = false;
   let stop = () => {};
-  const go = async ({ locationId, code }) => {
+  const go = async ({ locationId, code, gps = false }) => {
     if (busyNow) return;
     busyNow = true;
     err.textContent = '';
-    msg.textContent = cfg.checkLocation ? t('findingLocation') : t('checking');
-    $('#scanner', sheet).classList.add('got');
+    const idle = msg.textContent;
+    msg.textContent = gps || cfg.checkLocation ? t('findingLocation') : t('checking');
+    box.classList.add('got');
     try {
-      const r = await zoneClock({ out, locationId, code, checkLocation: cfg.checkLocation, breakMinutes: Number($('#z-brk', sheet)?.value || 0) });
+      const r = await zoneClock({ out, locationId, code, gps, checkLocation: cfg.checkLocation, breakMinutes: Number($('#z-brk', sheet)?.value || 0) });
       stop();
       celebrate($('.sbody', sheet) || sheet, { out, at: out ? r.clockOut : r.clockIn });
       setTimeout(() => { closeSheet(); onDone?.(); }, 1900);
     } catch (e) {
       busyNow = false;
-      $('#scanner', sheet).classList.remove('got');
-      msg.textContent = t('pointAtQr');
+      box.classList.remove('got');
+      msg.textContent = idle;
       err.textContent = clockError(e);
     }
   };
+  $('#z-gps-go', sheet)?.addEventListener('click', () => go({ gps: true }));
   $('#zone-form', sheet)?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const locs = (await api.get(bpath('/locations'))).filter((l) => !l.archivedAt && l.latitude !== null);
     go({ locationId: locs[0]?.id, code: $('#z-code', sheet).value });
   });
+  if (!scan) return;
   try {
     stop = await startScanner($('#z-video', sheet), (text) => {
       const qr = readDoorQr(text);
@@ -174,7 +183,8 @@ export async function zoneSheet({ out, onDone, clock }) {
   } catch (e) {
     $('#scanner', sheet).classList.add('off');
     msg.textContent = '';
-    err.textContent = clockError(e);
+    // With GPS allowed, a camera problem isn't a dead end.
+    err.textContent = method === 'either' ? `${clockError(e)} ${t('orUseLocation')}` : clockError(e);
   }
   // Stop the camera when the sheet closes.
   const video = $('#z-video', sheet);

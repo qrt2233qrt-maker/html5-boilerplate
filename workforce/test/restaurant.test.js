@@ -39,6 +39,8 @@ describe('clock-in zone (PizzaRita)', function () {
     const { owner, cook, mgr, B } = await restaurant(t);
     const loc = (await owner.post(B('/locations'), { name: 'PizzaRita Karrada', latitude: SHOP.lat, longitude: SHOP.lng, radiusM: 100 })).body;
     assert.equal(loc.radiusM, 100);
+    // QR only: being nearby isn't enough without the code.
+    await owner.put(B('/settings'), { settings: { attendance: { method: 'qr' } } });
     assert.equal((await cook.member.get(B('/me/week'))).body.zoneRequired, true);
 
     // No code at all.
@@ -69,7 +71,8 @@ describe('clock-in zone (PizzaRita)', function () {
     r = await cook.member.post(B('/attendance/clock-out'), { breakMinutes: 0, locationId: loc.id, code: await codeNow(t, loc.id), ...north(30), accuracy: 10 });
     assert.equal(r.status, 200);
     // The manager sees where each clock-in happened.
-    const day = new Date().toISOString().slice(0, 10);
+    // Tomorrow as well: the restaurant's date can be ahead of UTC.
+    const day = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
     const from = new Date(Date.now() - 2 * 864e5).toISOString().slice(0, 10);
     const list = (await mgr.member.get(B(`/attendance?from=${from}&to=${day}&membershipId=${cook.membershipId}`))).body;
     const rec = list[0];
@@ -120,15 +123,59 @@ describe('clock-in zone (PizzaRita)', function () {
   it('can rely on the QR alone, without checking the phone\'s location', async () => {
     const { owner, cook, B } = await restaurant(t);
     const loc = (await owner.post(B('/locations'), { name: 'PizzaRita', latitude: SHOP.lat, longitude: SHOP.lng })).body;
-    await owner.put(B('/settings'), { settings: { attendance: { checkLocation: false } } });
+    await owner.put(B('/settings'), { settings: { attendance: { method: 'qr', checkLocation: false } } });
     const week = (await cook.member.get(B('/me/week'))).body;
     assert.equal(week.zoneRequired, true);
-    assert.deepEqual(week.clock, { checkLocation: false, typedCode: false });
+    assert.deepEqual(week.clock, { method: 'qr', checkLocation: false, typedCode: false });
     // Still needs the current code from the door…
     assert.equal((await cook.member.post(B('/attendance/clock-in'), { locationId: loc.id, code: '000000' })).body.error.code, 'invalid_door_code');
     // …but no position.
     const r = await cook.member.post(B('/attendance/clock-in'), { locationId: loc.id, code: await codeNow(t, loc.id) });
     assert.equal(r.status, 200, JSON.stringify(r.body));
+  });
+
+  it('by default takes either the QR or the phone within 200 m', async () => {
+    const { owner, cook, mgr, B } = await restaurant(t);
+    const loc = (await owner.post(B('/locations'), { name: 'PizzaRita', latitude: SHOP.lat, longitude: SHOP.lng })).body;
+    assert.equal(loc.radiusM, 200);
+    assert.deepEqual((await cook.member.get(B('/me/week'))).body.clock, { method: 'either', checkLocation: false, typedCode: false });
+    // Nothing at all.
+    assert.equal((await cook.member.post(B('/attendance/clock-in'), {})).body.error.code, 'location_needed');
+    // GPS, about 300 m away: refused, with the distance.
+    let r = await cook.member.post(B('/attendance/clock-in'), { ...north(300), accuracy: 10 });
+    assert.equal(r.status, 403);
+    assert.equal(r.body.error.code, 'outside_zone');
+    assert.equal(r.body.error.details.radius, 200);
+    // GPS, about 180 m away: in.
+    r = await cook.member.post(B('/attendance/clock-in'), { ...north(180), accuracy: 10 });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    // Out by scanning the QR alone, no position needed.
+    r = await cook.member.post(B('/attendance/clock-out'), { breakMinutes: 0, locationId: loc.id, code: await codeNow(t, loc.id) });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    // A wrong code is still refused.
+    r = await mgr.member.post(B('/attendance/clock-in'), { locationId: loc.id, code: '000000' });
+    assert.equal(r.body.error.code, 'invalid_door_code');
+  });
+
+  it('can use GPS only, with the radius the owner sets', async () => {
+    const { owner, cook, B } = await restaurant(t);
+    const loc = (await owner.post(B('/locations'), { name: 'PizzaRita', latitude: SHOP.lat, longitude: SHOP.lng })).body;
+    await owner.put(B('/settings'), { settings: { attendance: { method: 'gps' } } });
+    await owner.put(B(`/locations/${loc.id}`), { radiusM: 50 });
+    assert.equal((await cook.member.get(B('/me/week'))).body.clock.method, 'gps');
+    // A scan doesn't replace the position here.
+    let r = await cook.member.post(B('/attendance/clock-in'), { locationId: loc.id, code: await codeNow(t, loc.id) });
+    assert.equal(r.body.error.code, 'location_needed');
+    // Too rough a reading.
+    r = await cook.member.post(B('/attendance/clock-in'), { ...north(20), accuracy: 900 });
+    assert.equal(r.body.error.code, 'location_inaccurate');
+    assert.equal((await cook.member.post(B('/attendance/clock-in'), { ...north(120), accuracy: 10 })).body.error.code, 'outside_zone');
+    r = await cook.member.post(B('/attendance/clock-in'), { ...north(40), accuracy: 10 });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const from = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+    const to = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
+    const rec = (await cook.member.get(B(`/attendance?mine=true&from=${from}&to=${to}`))).body[0];
+    assert.equal(rec.locationName, 'PizzaRita');
   });
 });
 

@@ -34,10 +34,28 @@ export async function zoneRequired(db, biz) {
   return rowCount > 0;
 }
 
-// Checks the door code and the phone's position; returns what to record.
-async function checkZone(db, biz, { locationId, code, lat, lng, accuracy }) {
-  if (!(await zoneRequired(db, biz))) return null;
-  if (!locationId || !code) throw badRequest('zone_required', 'Scan the QR code at the door to clock in or out.');
+// How people prove they're at work (settings.attendance.method):
+//   'qr'     scan the code at the door (plus the phone's position when
+//            checkLocation is on),
+//   'gps'    no scan: the phone must be inside a location's radius,
+//   'either' whichever the person does.
+export const clockMethod = (biz) => (['qr', 'gps', 'either'].includes(biz.settings.attendance.method) ? biz.settings.attendance.method : 'qr');
+
+// Rejects readings too rough to tell inside from far away.
+function checkAccuracy(accuracy) {
+  if (typeof accuracy === 'number' && accuracy > MAX_ACCURACY_M) {
+    throw badRequest('location_inaccurate', 'Your phone can\'t tell precisely where you are. Turn on precise location and try again.', { accuracy: Math.round(accuracy) });
+  }
+}
+
+// A little allowance for GPS error, but never more than 30 m.
+const allowanceFor = (accuracy) => Math.min(typeof accuracy === 'number' ? accuracy : 30, 30);
+
+const outside = (loc, distance) => new AppError(403, 'outside_zone', `You're about ${Math.round(distance)} m from ${loc.name}. Clock in once you're within ${loc.radius_m} m.`,
+  { distance: Math.round(distance), radius: loc.radius_m, location: loc.name });
+
+// Checks the door code (and the phone's position when asked).
+async function checkDoor(db, biz, { locationId, code, lat, lng, accuracy }) {
   const { rows: [loc] } = await db.query(
     'SELECT * FROM locations WHERE id = $1 AND business_id = $2 AND archived_at IS NULL', [locationId, biz.id]);
   if (!loc) throw badRequest('zone_required', 'Scan the QR code at the door to clock in or out.');
@@ -45,19 +63,38 @@ async function checkZone(db, biz, { locationId, code, lat, lng, accuracy }) {
     throw badRequest('invalid_door_code', 'That code has changed. Scan the code at the door again.');
   }
   const noPosition = { locationId: loc.id, lat: null, lng: null, accuracy: null, distance: null };
-  if (loc.latitude === null || biz.settings.attendance.checkLocation === false) return noPosition;
+  // Scanning alone is enough unless the owner also wants the position checked.
+  if (loc.latitude === null || biz.settings.attendance.checkLocation === false || clockMethod(biz) === 'either') return noPosition;
   if (typeof lat !== 'number' || typeof lng !== 'number') throw badRequest('location_needed', 'Allow location for this app, then try again.');
-  if (typeof accuracy === 'number' && accuracy > MAX_ACCURACY_M) {
-    throw badRequest('location_inaccurate', 'Your phone can\'t tell precisely where you are. Turn on precise location and try again.', { accuracy: Math.round(accuracy) });
-  }
+  checkAccuracy(accuracy);
   const distance = distanceM(lat, lng, loc.latitude, loc.longitude);
-  // A little allowance for GPS error, but never more than 30 m.
-  const allowance = Math.min(typeof accuracy === 'number' ? accuracy : 30, 30);
-  if (distance > loc.radius_m + allowance) {
-    throw new AppError(403, 'outside_zone', `You're about ${Math.round(distance)} m from ${loc.name}. Clock in once you're inside.`,
-      { distance: Math.round(distance), radius: loc.radius_m, location: loc.name });
-  }
+  if (distance > loc.radius_m + allowanceFor(accuracy)) throw outside(loc, distance);
   return { locationId: loc.id, lat, lng, accuracy: typeof accuracy === 'number' ? accuracy : null, distance };
+}
+
+// No scan: the phone's position must be inside the nearest location's radius.
+async function checkGps(db, biz, { lat, lng, accuracy }) {
+  if (typeof lat !== 'number' || typeof lng !== 'number') throw badRequest('location_needed', 'Allow location for this app, then try again.');
+  checkAccuracy(accuracy);
+  const { rows } = await db.query(
+    'SELECT * FROM locations WHERE business_id = $1 AND archived_at IS NULL AND latitude IS NOT NULL', [biz.id]);
+  let best = null;
+  for (const loc of rows) {
+    const distance = distanceM(lat, lng, loc.latitude, loc.longitude);
+    if (!best || distance - loc.radius_m < best.distance - best.loc.radius_m) best = { loc, distance };
+  }
+  if (!best) throw badRequest('zone_required', 'The restaurant\'s position isn\'t set yet. Ask a manager.');
+  if (best.distance > best.loc.radius_m + allowanceFor(accuracy)) throw outside(best.loc, best.distance);
+  return { locationId: best.loc.id, lat, lng, accuracy: typeof accuracy === 'number' ? accuracy : null, distance: best.distance };
+}
+
+// Checks the door code or the phone's position; returns what to record.
+async function checkZone(db, biz, where) {
+  if (!(await zoneRequired(db, biz))) return null;
+  const method = clockMethod(biz);
+  if (method !== 'gps' && where.locationId && where.code) return checkDoor(db, biz, where);
+  if (method !== 'qr') return checkGps(db, biz, where);
+  throw badRequest('zone_required', 'Scan the QR code at the door to clock in or out.');
 }
 
 // The shift this clock-in belongs to: one running now or starting within 2 hours.

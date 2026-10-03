@@ -176,7 +176,7 @@ export async function saveLocation(app, req, id, { name, address, archived, lati
   } else {
     ({ rows: [row] } = await db.query(
       `INSERT INTO locations (business_id, name, address, latitude, longitude, radius_m, door_mode)
-       VALUES ($1, $2, $3, $4, $5, coalesce($6, 100), coalesce($7, 'screen')) RETURNING *`,
+       VALUES ($1, $2, $3, $4, $5, coalesce($6, 200), coalesce($7, 'screen')) RETURNING *`,
       [req.member.businessId, name, address ?? null, pos?.[0] ?? null, pos?.[1] ?? null, radiusM ?? null, doorMode ?? null]));
   }
   await auditB(db, req, {

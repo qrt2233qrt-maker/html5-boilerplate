@@ -969,3 +969,13 @@ dialog[open] .sbody > * { animation: rise var(--dur-base) var(--ease-out) both; 
 /* Lists that refresh by themselves don't replay the entrance. */
 .chat-list > .row, .chat-log > *, #i-list .row, #m-list .row { animation: none; }
 .banner svg { width: 18px; height: 18px; vertical-align: -3px; flex: none; }
+
+/* Clock in by location: a pin that pulses while the phone checks. */
+.gps-state { display: grid; justify-items: center; gap: 10px; padding: 22px 16px; margin: 4px 0 12px; border-radius: 22px; background: var(--surface-2); text-align: center; }
+.gps-state p { margin: 0; color: var(--muted); }
+.gps-pin { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%; background: var(--accent-soft, var(--surface)); color: var(--accent, currentColor); }
+.gps-pin svg { width: 30px; height: 30px; }
+.gps-state.got .gps-pin { animation: gps-pulse 1.1s ease-in-out infinite; }
+@keyframes gps-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.12); } }
+@media (prefers-reduced-motion: reduce) { .gps-state.got .gps-pin { animation: none; } }
+#z-gps-go { margin-bottom: 10px; }

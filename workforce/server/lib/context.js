@@ -13,10 +13,12 @@ export const DEFAULT_SETTINGS = {
   },
   payroll: { frequency: 'monthly', weekStartsOn: 6, overtimeWeeklyHours: 48, overtimeMultiplier: 1.5 },
   approvals: { expenseOwnerOver: 250000 },
-  // Clock in/out only by scanning the door QR once a location has its
-  // position; checkLocation also checks the phone is inside the radius;
-  // typedCode lets people type the code under the QR instead of scanning.
-  attendance: { requireZone: true, checkLocation: true, typedCode: false },
+  // Once a location has its position, clocking in/out needs proof of being
+  // there. method: 'qr' (scan the door code), 'gps' (phone within the
+  // location's radius, no scan) or 'either'. checkLocation also checks the
+  // position when scanning in 'qr' mode; typedCode lets people type the code
+  // under the QR instead of scanning.
+  attendance: { requireZone: true, method: 'either', checkLocation: true, typedCode: false },
   alerts: { payrollIncreasePct: 15, categoryIncreasePct: 25, revenueDropPct: 10, overtimeIncreasePct: 20, marginBelowPct: 10, largeExpense: 1000000 },
 };
 
