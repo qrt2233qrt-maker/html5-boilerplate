@@ -1,5 +1,6 @@
 // Approvals inbox for managers and owners (spec §34, §39).
 import { api } from '../api.js';
+import { discussRequest } from './chat.js';
 import { t } from '../i18n.js';
 import { ICON } from '../icons.js';
 import { bpath, can } from '../state.js';
@@ -32,7 +33,7 @@ export const approvalsPage = {
     const counts = { requests: ready.length, swaps: swaps.length, expenses: claims.length };
     view.querySelectorAll('[data-count]').forEach((n) => { n.textContent = counts[n.dataset.count] ? ` ${counts[n.dataset.count]}` : ''; });
     const body = $('#body', view);
-    const actions = (kind, id) => html`<span class="end row-gap"><button class="btn small primary" type="button" data-approve="${kind}:${id}">${t('approve')}</button>
+    const actions = (kind, id, discuss = false) => html`<span class="end row-gap">${discuss ? html`<button class="btn small ghost" type="button" data-discuss="${id}">${ICON.chat}${t('discuss')}</button>` : ''}<button class="btn small primary" type="button" data-approve="${kind}:${id}">${t('approve')}</button>
       <button class="btn small danger" type="button" data-reject="${kind}:${id}">${t('reject')}</button></span>`;
     if (tab === 'requests') {
       mount(body, ready.length ? html`<div class="listbox wrap">${ready.map((r) => html`<div class="row">
@@ -40,7 +41,7 @@ export const approvalsPage = {
         <span class="mid"><span class="t1">${r.memberName} · ${t(`req_${r.type}`)}</span>
           <span class="t2 num">${r.type === 'time_off' ? `${dayLabel(r.requestedStartsAt)} – ${dayLabel(new Date(new Date(r.requestedEndsAt) - 1).toISOString())}` : shiftRange({ startsAt: r.shiftStartsAt, endsAt: r.shiftEndsAt })}
           ${r.type === 'change' ? ` → ${dayLabel(r.requestedStartsAt)} ${time(r.requestedStartsAt)}–${time(r.requestedEndsAt)}` : ''}${r.takerName ? ` → ${r.takerName}` : ''}</span>
-          ${r.reason ? html`<span class="t2">“${r.reason}”</span>` : ''}</span>${actions('request', r.id)}</div>`)}</div>` : empty(t('allCaughtUp')));
+          ${r.reason ? html`<span class="t2">“${r.reason}”</span>` : ''}</span>${actions('request', r.id, true)}</div>`)}</div>` : empty(t('allCaughtUp')));
     } else if (tab === 'swaps') {
       mount(body, swaps.length ? html`<div class="listbox wrap">${swaps.map((w) => html`<div class="row"><span class="avatar">${ICON.swap}</span>
         <span class="mid"><span class="t1">${w.requester.name} ⇄ ${w.target.name}</span>
@@ -59,6 +60,7 @@ export const approvalsPage = {
     body.onclick = async (e) => {
       const b = e.target.closest('button');
       if (!b) return;
+      if (b.dataset.discuss) return discussRequest(b.dataset.discuss, b);
       const decide = async (kind, id, approve, note) => {
         if (kind === 'request') await api.post(bpath(`/shift-requests/${id}/review`), { approve, note: note || null });
         if (kind === 'swap') await api.post(bpath(`/swaps/${id}/review`), { approve, note: note || null });

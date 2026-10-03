@@ -28,6 +28,7 @@ import { settingsPage } from './pages/settings.js';
 import { memberPage } from './pages/member.js';
 import { clockPage, doorPage } from './clock.js';
 import { tripsPage } from './pages/trips.js';
+import { chatPage, refreshChatBadge } from './pages/chat.js';
 
 route('/login', loginPage);
 route('/register', registerPage);
@@ -55,6 +56,7 @@ route('/settings', { ...settingsPage, perm: () => can('business.settings.manage'
 route('/member', memberPage);
 route('/clock', clockPage);
 route('/trips', { ...tripsPage, perm: 'attendance.manage' });
+route('/chat', chatPage);
 route('/door', { ...doorPage, perm: 'attendance.manage' });
 route('/more', { title: () => t('more'), render: renderMore });
 
@@ -68,6 +70,7 @@ function navItems() {
   const approvals = can('shift_requests.approve') || can('swaps.approve') || can('employee_expenses.review');
   return [
     { path: '/home', icon: ICON.home, label: t('home'), show: true, tab: true },
+    { path: '/chat', icon: ICON.chat, label: t('chat'), show: true, tab: true, badge: 'chat' },
     { path: '/analytics', icon: ICON.chart, label: t('analytics'), show: finance || can('analytics.view'), tab: finance },
     { path: '/finance', icon: ICON.money, label: t('finance'), show: can('business_expenses.view') || can('revenue.view') || finance || can('budgets.manage'), tab: finance },
     { path: '/schedule', icon: ICON.calendar, label: manager ? t('schedule') : t('mySchedule'), show: true, tab: !finance },
@@ -152,6 +155,9 @@ function openSearch() {
   setTimeout(() => input.focus(), 50);
 }
 
+// The unread count beside Chat; filled in by refreshChatBadge().
+const badgeOf = (i) => (i.badge === 'chat' ? html`<span class="badge num" data-chat-badge hidden></span>` : '');
+
 function renderNav(path) {
   const items = navItems();
   const b = S.business;
@@ -160,7 +166,7 @@ function renderNav(path) {
   mount($('.side'), html`
     <div class="brand"><span class="mark">${(b.name.trim()[0] || '·').toUpperCase()}</span>
       <div><b>${b.name}</b><small>${t(`role_${b.role}`)}</small></div></div>
-    ${items.map((i) => html`<a class="navbtn" href="#${i.path}" ${cur(i.path)}>${i.icon}<span>${i.label}</span></a>`)}
+    ${items.map((i) => html`<a class="navbtn" href="#${i.path}" ${cur(i.path)}>${i.icon}<span>${i.label}</span>${badgeOf(i)}</a>`)}
     <div class="foot">
       ${multi ? html`<button class="navbtn" type="button" data-switch>${ICON.globe}<span>${t('switchBusiness')}</span></button>` : ''}
       <button class="navbtn" type="button" data-lang>${ICON.globe}<span>${t('lang')}</span></button>
@@ -169,7 +175,7 @@ function renderNav(path) {
   const tabs = items.filter((i) => i.tab);
   const extra = items.filter((i) => !i.tab);
   const moreActive = path === '/more' || extra.some((i) => i.path === path);
-  mount($('.tabs'), html`${tabs.map((i) => html`<a class="tab" href="#${i.path}" ${cur(i.path)}>${i.icon}<span>${i.label}</span></a>`)}
+  mount($('.tabs'), html`${tabs.map((i) => html`<a class="tab" href="#${i.path}" ${cur(i.path)}>${i.icon}<span>${i.label}</span>${badgeOf(i)}</a>`)}
     ${extra.length || multi ? html`<a class="tab" href="#/more" ${moreActive ? html`aria-current="page"` : ''}>${ICON.more}<span>${t('more')}</span></a>` : ''}`);
   mount($('#biz'), multi ? html`<button type="button" data-switch>${b.name}${ICON.down}</button>` : html`${b.name}`);
   document.querySelectorAll('[data-switch]').forEach((el) => { el.onclick = switchBusiness; });
@@ -181,7 +187,7 @@ function renderMore(view) {
   const extra = navItems().filter((i) => !i.tab);
   const multi = activeBusinesses().length > 1;
   mount(view, html`<div class="listbox">
-    ${extra.map((i) => html`<a class="row" href="#${i.path}"><span class="avatar">${i.icon}</span><span class="mid"><span class="t1">${i.label}</span></span><span class="chev">${ICON.chev}</span></a>`)}
+    ${extra.map((i) => html`<a class="row" href="#${i.path}"><span class="avatar">${i.icon}</span><span class="mid"><span class="t1">${i.label}</span></span>${badgeOf(i)}<span class="chev">${ICON.chev}</span></a>`)}
     ${multi ? html`<button class="row" type="button" id="more-switch"><span class="avatar">${ICON.globe}</span><span class="mid"><span class="t1">${t('switchBusiness')}</span></span><span class="chev">${ICON.chev}</span></button>` : ''}
     <button class="row" type="button" id="more-out"><span class="avatar">${ICON.out}</span><span class="mid"><span class="t1">${t('signOut')}</span></span></button>
   </div>`);
@@ -247,8 +253,9 @@ function renderPage(page, ctx) {
     if (r?.catch) r.catch((err) => { console.error(err); toast(t('e.server_error'), { error: true }); });
   });
   refreshBell();
+  refreshChatBadge();
   clearInterval(bellTimer);
-  bellTimer = setInterval(refreshBell, 60000);
+  bellTimer = setInterval(() => { refreshBell(); refreshChatBadge(); }, 30000);
   if (ctx.prev && ctx.prev !== ctx.path) {
     window.scrollTo(0, 0);
     $('#title').focus({ preventScroll: true });

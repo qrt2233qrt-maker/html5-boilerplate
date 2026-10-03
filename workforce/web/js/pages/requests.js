@@ -1,6 +1,7 @@
 // My requests and swaps (spec §4-5): status of everything I asked for,
 // swaps waiting for my answer, and shifts colleagues are giving away.
 import { api } from '../api.js';
+import { discussRequest } from './chat.js';
 import { t } from '../i18n.js';
 import { ICON } from '../icons.js';
 import { S, bpath, can } from '../state.js';
@@ -57,7 +58,7 @@ async function draw(view) {
       <span class="t2 num">${r.type === 'time_off' ? `${dayLabel(r.requestedStartsAt)} – ${dayLabel(new Date(new Date(r.requestedEndsAt) - 1).toISOString())}` : r.shiftStartsAt ? shiftRange({ startsAt: r.shiftStartsAt, endsAt: r.shiftEndsAt }) : ''}
       ${r.type === 'change' && r.requestedStartsAt ? ` → ${time(r.requestedStartsAt)}–${time(r.requestedEndsAt)}` : ''}${r.takerName ? ` → ${r.takerName}` : ''}</span>
       ${r.reviewNote ? html`<span class="t2">“${r.reviewNote}”</span>` : ''}</span>
-    <span class="end">${statusPill(r.status)}${r.status === 'pending' ? html`<button class="btn small ghost" type="button" data-cancel-req="${r.id}">${t('cancel')}</button>` : ''}</span></div>`;
+    <span class="end">${statusPill(r.status)}<button class="btn small ghost" type="button" data-discuss="${r.id}">${ICON.chat}${t('discuss')}</button>${r.status === 'pending' ? html`<button class="btn small ghost" type="button" data-cancel-req="${r.id}">${t('cancel')}</button>` : ''}</span></div>`;
   const swapRow = (w) => {
     const iAsked = w.requester.membershipId === me;
     const other = iAsked ? w.target : w.requester;
@@ -81,6 +82,7 @@ async function draw(view) {
   body.onclick = async (e) => {
     const b = e.target.closest('button');
     if (!b) return;
+    if (b.dataset.discuss) return discussRequest(b.dataset.discuss, b);
     try {
       if (b.dataset.cancelReq) {
         if (!(await confirmDialog({ title: t('cancelRequestQ'), confirm: t('cancelRequest'), danger: true }))) return;

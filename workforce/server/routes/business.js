@@ -4,6 +4,7 @@ import peopleRoutes from './people.js';
 import schedulingRoutes from './scheduling.js';
 import financeRoutes from './finance.js';
 import insightRoutes from './insights.js';
+import chatRoutes from './chat.js';
 
 const uuid = { type: 'string', format: 'uuid' };
 const str = (max, min = 1) => ({ type: 'string', minLength: min, maxLength: max });
@@ -18,6 +19,7 @@ export default async function businessRoutes(app) {
   await app.register(schedulingRoutes);
   await app.register(financeRoutes);
   await app.register(insightRoutes);
+  await app.register(chatRoutes);
   const ok = { ok: true };
 
   app.get('/', { schema: { params: params() } }, async (req) => ({
