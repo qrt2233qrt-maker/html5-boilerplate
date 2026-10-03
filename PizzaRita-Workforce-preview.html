@@ -981,6 +981,16 @@ dialog[open] .sbody > * { animation: rise var(--dur-base) var(--ease-out) both; 
 .chat-list > .row, .chat-log > *, #i-list .row, #m-list .row { animation: none; }
 .banner svg { width: 18px; height: 18px; vertical-align: -3px; flex: none; }
 
+/* Clock in by location: a pin that pulses while the phone checks. */
+.gps-state { display: grid; justify-items: center; gap: 10px; padding: 22px 16px; margin: 4px 0 12px; border-radius: 22px; background: var(--surface-2); text-align: center; }
+.gps-state p { margin: 0; color: var(--muted); }
+.gps-pin { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%; background: var(--accent-soft, var(--surface)); color: var(--accent, currentColor); }
+.gps-pin svg { width: 30px; height: 30px; }
+.gps-state.got .gps-pin { animation: gps-pulse 1.1s ease-in-out infinite; }
+@keyframes gps-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.12); } }
+@media (prefers-reduced-motion: reduce) { .gps-state.got .gps-pin { animation: none; } }
+#z-gps-go { margin-bottom: 10px; }
+
 
   /* Preview role switcher: a quiet pill that sits above the phone tab bar,
      and in the corner on desktop. Colours come from the app's own tokens. */
@@ -1158,11 +1168,17 @@ window.__WF_FIXTURES = {"owner": {"/api/auth/me": {"status": 200, "body": {"csrf
     if (rest === '/me/week') {
       const b = clone(body);
       // In the demo you clock in by typing any code (there's no door to scan).
-      b.clock = { checkLocation: false, typedCode: true };
+      b.clock = { method: 'either', checkLocation: false, typedCode: true };
       const c = M.clock.get(m.mid);
       b.clockedIn = c ? { attendanceId: c.id, since: c.since, shiftId: null } : null;
       return b;
     }
+    if (rest === '/settings' && body && body.settings) {
+      const b = clone(body);
+      b.settings.attendance = { ...b.settings.attendance, method: b.settings.attendance.method || 'either' };
+      return b;
+    }
+    if (rest === '/locations' && Array.isArray(body)) return body.map((l) => ({ ...l, radiusM: l.radiusM === 100 ? 200 : l.radiusM }));
     if (rest === '/attendance' && Array.isArray(body)) {
       const mine = q.get('mine') === 'true' || D.role === 'employee';
       const add = D.att.filter((a) => (!mine || a.membershipId === m.mid) && inRange(a.clockIn, q));
@@ -12545,7 +12561,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
         "latitude": "Latitude",
         "longitude": "Longitude",
         "zoneRadius": "Clock-in radius (metres)",
-        "zoneRadiusHint": "100 m covers most restaurants and their entrance. Smaller can wrongly refuse staff when phone GPS drifts indoors.",
+        "zoneRadiusHint": "How close staff must be to clock in by location. 200 m covers the restaurant, its entrance and parking; smaller can wrongly refuse staff when phone GPS drifts indoors.",
         "doorCodeType": "Door code",
         "doorMode_screen": "Tablet screen, changes every minute (recommended)",
         "doorMode_daily": "Printed sheet, changes daily",
@@ -12558,9 +12574,9 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
         "resetDoorCodeBody": "Every code shown or printed so far stops working. Use this if a code was shared.",
         "doorCodeReset": "Door code reset",
         "clockZone": "Clock-in at the restaurant",
-        "clockZoneBody": "Staff can clock in or out only inside the restaurant, by scanning the code at the door. Location is checked only at that moment.",
+        "clockZoneBody": "Staff prove they are at work when they clock in or out: by scanning the code at the door, or by their phone's location near the restaurant. Location is checked only at that moment.",
         "requireZone": "Required",
-        "requireZoneLong": "Clock in and out only by scanning the QR code at the door",
+        "requireZoneLong": "Clock in and out only at the restaurant",
         "locationsWithPosition": "Places with a position",
         "on": "On",
         "off": "Off",
@@ -12571,7 +12587,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
         "e.location_needed": "Allow location for this app, then try again.",
         "e.location_inaccurate": "Your phone can't tell precisely where you are. Turn on precise location, then try again.",
         "e.outside_zone": "You're not at the restaurant. Clock in once you're inside.",
-        "e.outside_zone_far": "You're about {m} m from {place}. Clock in once you're inside.",
+        "e.outside_zone_far": "You're about {m} m from {place}. You need to be within {r} m to clock in.",
         "e.geo_denied": "Location is blocked for this app. Allow it in your browser settings, then try again.",
         "e.geo_timeout": "Finding your location took too long. Step near a window and try again.",
         "e.geo_unavailable": "Your phone couldn't find its location. Turn on location services and try again.",
@@ -12705,7 +12721,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
         "notDoorQr": "That isn't the door QR. Point at the code on the door screen.",
         "byeMessage": "Thanks for today. See you next shift!",
         "helloMessage": "Have a great shift, {name}!",
-        "checkLocationLong": "Also check the phone is inside the restaurant",
+        "checkLocationLong": "With QR only: also check the phone is near the restaurant",
         "typedCodeLong": "Allow typing the code instead of scanning",
         "checkLocation": "Location check",
         "typedCode": "Typing the code",
@@ -12799,7 +12815,20 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
         "addShiftType": "Add a shift",
         "openingHours": "Open",
         "shift_morning": "Morning",
-        "shift_night": "Night"
+        "shift_night": "Night",
+        "clockMethod": "How staff clock in",
+        "clockMethod_either": "QR or location",
+        "clockMethod_qr": "QR only",
+        "clockMethod_gps": "Location only",
+        "clockMethodLong_either": "QR or location (recommended)",
+        "clockMethodLong_qr": "Scan the QR only",
+        "clockMethodLong_gps": "Location only (no scan)",
+        "useLocationInstead": "No camera? Use my location instead",
+        "clockInHere": "Clock in here",
+        "clockOutHere": "Clock out here",
+        "gpsClockHint": "You need to be at the restaurant. Your phone will ask to share your location once.",
+        "eitherHint": "Scan the QR at the door, or use your location if you're within the restaurant's area.",
+        "orUseLocation": "You can use your location instead."
       };
       ar = {
         analytics: "\u0627\u0644\u062A\u062D\u0644\u064A\u0644\u0627\u062A",
@@ -13555,7 +13584,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
         "latitude": "\u062E\u0637 \u0627\u0644\u0639\u0631\u0636",
         "longitude": "\u062E\u0637 \u0627\u0644\u0637\u0648\u0644",
         "zoneRadius": "\u0646\u0637\u0627\u0642 \u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u062D\u0636\u0648\u0631 (\u0645\u062A\u0631)",
-        "zoneRadiusHint": "100 \u0645 \u062A\u063A\u0637\u064A \u0645\u0639\u0638\u0645 \u0627\u0644\u0645\u0637\u0627\u0639\u0645 \u0648\u0645\u062F\u0627\u062E\u0644\u0647\u0627. \u0627\u0644\u0646\u0637\u0627\u0642 \u0627\u0644\u0623\u0635\u063A\u0631 \u0642\u062F \u064A\u0631\u0641\u0636 \u0627\u0644\u0645\u0648\u0638\u0641\u064A\u0646 \u062E\u0637\u0623\u064B \u0639\u0646\u062F\u0645\u0627 \u064A\u0646\u062D\u0631\u0641 GPS \u062F\u0627\u062E\u0644 \u0627\u0644\u0645\u0628\u0646\u0649.",
+        "zoneRadiusHint": "\u0627\u0644\u0645\u0633\u0627\u0641\u0629 \u0627\u0644\u0645\u0633\u0645\u0648\u062D\u0629 \u0644\u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u062D\u0636\u0648\u0631 \u0628\u0627\u0644\u0645\u0648\u0642\u0639. 200 \u0645 \u062A\u063A\u0637\u064A \u0627\u0644\u0645\u0637\u0639\u0645 \u0648\u0645\u062F\u062E\u0644\u0647 \u0648\u0627\u0644\u0645\u0648\u0627\u0642\u0641\u061B \u0627\u0644\u0646\u0637\u0627\u0642 \u0627\u0644\u0623\u0635\u063A\u0631 \u0642\u062F \u064A\u0631\u0641\u0636 \u0627\u0644\u0645\u0648\u0638\u0641\u064A\u0646 \u062E\u0637\u0623\u064B \u0639\u0646\u062F\u0645\u0627 \u064A\u0646\u062D\u0631\u0641 GPS \u062F\u0627\u062E\u0644 \u0627\u0644\u0645\u0628\u0646\u0649.",
         "doorCodeType": "\u0631\u0645\u0632 \u0627\u0644\u0628\u0627\u0628",
         "doorMode_screen": "\u0634\u0627\u0634\u0629 \u0644\u0648\u062D\u064A\u0629\u060C \u064A\u062A\u063A\u064A\u0631 \u0643\u0644 \u062F\u0642\u064A\u0642\u0629 (\u0645\u0648\u0635\u0649 \u0628\u0647)",
         "doorMode_daily": "\u0648\u0631\u0642\u0629 \u0645\u0637\u0628\u0648\u0639\u0629\u060C \u064A\u062A\u063A\u064A\u0631 \u064A\u0648\u0645\u064A\u0627\u064B",
@@ -13568,9 +13597,9 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
         "resetDoorCodeBody": "\u062A\u062A\u0648\u0642\u0641 \u0643\u0644 \u0627\u0644\u0631\u0645\u0648\u0632 \u0627\u0644\u0645\u0639\u0631\u0648\u0636\u0629 \u0623\u0648 \u0627\u0644\u0645\u0637\u0628\u0648\u0639\u0629 \u062D\u062A\u0649 \u0627\u0644\u0622\u0646 \u0639\u0646 \u0627\u0644\u0639\u0645\u0644. \u0627\u0633\u062A\u062E\u062F\u0645\u0647 \u0625\u0630\u0627 \u0634\u0648\u0631\u0643 \u0631\u0645\u0632 \u0645\u0627.",
         "doorCodeReset": "\u0623\u064F\u0639\u064A\u062F \u062A\u0639\u064A\u064A\u0646 \u0631\u0645\u0632 \u0627\u0644\u0628\u0627\u0628",
         "clockZone": "\u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u062D\u0636\u0648\u0631 \u0641\u064A \u0627\u0644\u0645\u0637\u0639\u0645",
-        "clockZoneBody": "\u064A\u0633\u062C\u0651\u0644 \u0627\u0644\u0645\u0648\u0638\u0641\u0648\u0646 \u0627\u0644\u062D\u0636\u0648\u0631 \u0648\u0627\u0644\u0627\u0646\u0635\u0631\u0627\u0641 \u0641\u0642\u0637 \u062F\u0627\u062E\u0644 \u0627\u0644\u0645\u0637\u0639\u0645 \u0628\u0645\u0633\u062D \u0627\u0644\u0631\u0645\u0632 \u0639\u0646\u062F \u0627\u0644\u0628\u0627\u0628\u060C \u0648\u064A\u064F\u062A\u062D\u0642\u0642 \u0645\u0646 \u0627\u0644\u0645\u0648\u0642\u0639 \u0641\u064A \u062A\u0644\u0643 \u0627\u0644\u0644\u062D\u0638\u0629 \u0641\u0642\u0637.",
+        "clockZoneBody": "\u064A\u062B\u0628\u062A \u0627\u0644\u0645\u0648\u0638\u0641\u0648\u0646 \u0648\u062C\u0648\u062F\u0647\u0645 \u0641\u064A \u0627\u0644\u0639\u0645\u0644 \u0639\u0646\u062F \u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u062D\u0636\u0648\u0631 \u0623\u0648 \u0627\u0644\u0627\u0646\u0635\u0631\u0627\u0641: \u0628\u0645\u0633\u062D \u0627\u0644\u0631\u0645\u0632 \u0639\u0646\u062F \u0627\u0644\u0628\u0627\u0628\u060C \u0623\u0648 \u0628\u0645\u0648\u0642\u0639 \u0627\u0644\u0647\u0627\u062A\u0641 \u0642\u0631\u0628 \u0627\u0644\u0645\u0637\u0639\u0645. \u064A\u064F\u062A\u062D\u0642\u0642 \u0645\u0646 \u0627\u0644\u0645\u0648\u0642\u0639 \u0641\u064A \u062A\u0644\u0643 \u0627\u0644\u0644\u062D\u0638\u0629 \u0641\u0642\u0637.",
         "requireZone": "\u0645\u0637\u0644\u0648\u0628",
-        "requireZoneLong": "\u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u062D\u0636\u0648\u0631 \u0648\u0627\u0644\u0627\u0646\u0635\u0631\u0627\u0641 \u0641\u0642\u0637 \u0628\u0645\u0633\u062D \u0631\u0645\u0632 QR \u0639\u0646\u062F \u0627\u0644\u0628\u0627\u0628",
+        "requireZoneLong": "\u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u062D\u0636\u0648\u0631 \u0648\u0627\u0644\u0627\u0646\u0635\u0631\u0627\u0641 \u0641\u064A \u0627\u0644\u0645\u0637\u0639\u0645 \u0641\u0642\u0637",
         "locationsWithPosition": "\u0623\u0645\u0627\u0643\u0646 \u0645\u062D\u062F\u062F\u0629 \u0627\u0644\u0645\u0648\u0642\u0639",
         "on": "\u0645\u0641\u0639\u0651\u0644",
         "off": "\u0645\u062A\u0648\u0642\u0641",
@@ -13581,7 +13610,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
         "e.location_needed": "\u0627\u0633\u0645\u062D \u0644\u0647\u0630\u0627 \u0627\u0644\u062A\u0637\u0628\u064A\u0642 \u0628\u0627\u0644\u0648\u0635\u0648\u0644 \u0625\u0644\u0649 \u0627\u0644\u0645\u0648\u0642\u0639 \u062B\u0645 \u062D\u0627\u0648\u0644 \u0645\u062C\u062F\u062F\u0627\u064B.",
         "e.location_inaccurate": "\u0644\u0627 \u064A\u0633\u062A\u0637\u064A\u0639 \u0647\u0627\u062A\u0641\u0643 \u062A\u062D\u062F\u064A\u062F \u0645\u0643\u0627\u0646\u0643 \u0628\u062F\u0642\u0629. \u0641\u0639\u0651\u0644 \u0627\u0644\u0645\u0648\u0642\u0639 \u0627\u0644\u062F\u0642\u064A\u0642 \u062B\u0645 \u062D\u0627\u0648\u0644 \u0645\u062C\u062F\u062F\u0627\u064B.",
         "e.outside_zone": "\u0623\u0646\u062A \u0644\u0633\u062A \u0641\u064A \u0627\u0644\u0645\u0637\u0639\u0645. \u0633\u062C\u0651\u0644 \u062D\u0636\u0648\u0631\u0643 \u0639\u0646\u062F\u0645\u0627 \u062A\u0643\u0648\u0646 \u0641\u064A \u0627\u0644\u062F\u0627\u062E\u0644.",
-        "e.outside_zone_far": "\u0623\u0646\u062A \u0639\u0644\u0649 \u0628\u064F\u0639\u062F \u0646\u062D\u0648 {m} \u0645 \u0645\u0646 {place}. \u0633\u062C\u0651\u0644 \u062D\u0636\u0648\u0631\u0643 \u0639\u0646\u062F\u0645\u0627 \u062A\u0643\u0648\u0646 \u0641\u064A \u0627\u0644\u062F\u0627\u062E\u0644.",
+        "e.outside_zone_far": "\u0623\u0646\u062A \u0639\u0644\u0649 \u0628\u064F\u0639\u062F \u0646\u062D\u0648 {m} \u0645 \u0645\u0646 {place}. \u064A\u062C\u0628 \u0623\u0646 \u062A\u0643\u0648\u0646 \u0636\u0645\u0646 {r} \u0645 \u0644\u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u062D\u0636\u0648\u0631.",
         "e.geo_denied": "\u0627\u0644\u0645\u0648\u0642\u0639 \u0645\u062D\u0638\u0648\u0631 \u0644\u0647\u0630\u0627 \u0627\u0644\u062A\u0637\u0628\u064A\u0642. \u0627\u0633\u0645\u062D \u0628\u0647 \u0645\u0646 \u0625\u0639\u062F\u0627\u062F\u0627\u062A \u0627\u0644\u0645\u062A\u0635\u0641\u062D \u062B\u0645 \u062D\u0627\u0648\u0644 \u0645\u062C\u062F\u062F\u0627\u064B.",
         "e.geo_timeout": "\u0627\u0633\u062A\u063A\u0631\u0642 \u062A\u062D\u062F\u064A\u062F \u0645\u0648\u0642\u0639\u0643 \u0648\u0642\u062A\u0627\u064B \u0637\u0648\u064A\u0644\u0627\u064B. \u0627\u0642\u062A\u0631\u0628 \u0645\u0646 \u0646\u0627\u0641\u0630\u0629 \u0648\u062D\u0627\u0648\u0644 \u0645\u062C\u062F\u062F\u0627\u064B.",
         "e.geo_unavailable": "\u062A\u0639\u0630\u0651\u0631 \u0639\u0644\u0649 \u0647\u0627\u062A\u0641\u0643 \u062A\u062D\u062F\u064A\u062F \u0645\u0648\u0642\u0639\u0647. \u0641\u0639\u0651\u0644 \u062E\u062F\u0645\u0627\u062A \u0627\u0644\u0645\u0648\u0642\u0639 \u0648\u062D\u0627\u0648\u0644 \u0645\u062C\u062F\u062F\u0627\u064B.",
@@ -13719,7 +13748,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
         "notDoorQr": "\u0647\u0630\u0627 \u0644\u064A\u0633 \u0631\u0645\u0632 \u0627\u0644\u0628\u0627\u0628. \u0648\u062C\u0651\u0647 \u0627\u0644\u0643\u0627\u0645\u064A\u0631\u0627 \u0646\u062D\u0648 \u0627\u0644\u0631\u0645\u0632 \u0639\u0644\u0649 \u0634\u0627\u0634\u0629 \u0627\u0644\u0628\u0627\u0628.",
         "byeMessage": "\u0634\u0643\u0631\u0627\u064B \u0639\u0644\u0649 \u064A\u0648\u0645\u0643. \u0646\u0631\u0627\u0643 \u0641\u064A \u0627\u0644\u0645\u0646\u0627\u0648\u0628\u0629 \u0627\u0644\u0642\u0627\u062F\u0645\u0629!",
         "helloMessage": "\u0645\u0646\u0627\u0648\u0628\u0629 \u0645\u0648\u0641\u0642\u0629 \u064A\u0627 {name}!",
-        "checkLocationLong": "\u0627\u0644\u062A\u062D\u0642\u0642 \u0623\u064A\u0636\u0627\u064B \u0645\u0646 \u0648\u062C\u0648\u062F \u0627\u0644\u0647\u0627\u062A\u0641 \u062F\u0627\u062E\u0644 \u0627\u0644\u0645\u0637\u0639\u0645",
+        "checkLocationLong": "\u0645\u0639 QR \u0641\u0642\u0637: \u0627\u0644\u062A\u062D\u0642\u0642 \u0623\u064A\u0636\u0627\u064B \u0645\u0646 \u0648\u062C\u0648\u062F \u0627\u0644\u0647\u0627\u062A\u0641 \u0642\u0631\u0628 \u0627\u0644\u0645\u0637\u0639\u0645",
         "typedCodeLong": "\u0627\u0644\u0633\u0645\u0627\u062D \u0628\u0643\u062A\u0627\u0628\u0629 \u0627\u0644\u0631\u0645\u0632 \u0628\u062F\u0644\u0627\u064B \u0645\u0646 \u0627\u0644\u0645\u0633\u062D",
         "checkLocation": "\u0627\u0644\u062A\u062D\u0642\u0642 \u0645\u0646 \u0627\u0644\u0645\u0648\u0642\u0639",
         "typedCode": "\u0643\u062A\u0627\u0628\u0629 \u0627\u0644\u0631\u0645\u0632",
@@ -13813,7 +13842,20 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
         "addShiftType": "\u0625\u0636\u0627\u0641\u0629 \u0645\u0646\u0627\u0648\u0628\u0629",
         "openingHours": "\u0627\u0644\u062F\u0648\u0627\u0645",
         "shift_morning": "\u0635\u0628\u0627\u062D\u064A",
-        "shift_night": "\u0645\u0633\u0627\u0626\u064A"
+        "shift_night": "\u0645\u0633\u0627\u0626\u064A",
+        "clockMethod": "\u0637\u0631\u064A\u0642\u0629 \u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u062D\u0636\u0648\u0631",
+        "clockMethod_either": "QR \u0623\u0648 \u0627\u0644\u0645\u0648\u0642\u0639",
+        "clockMethod_qr": "QR \u0641\u0642\u0637",
+        "clockMethod_gps": "\u0627\u0644\u0645\u0648\u0642\u0639 \u0641\u0642\u0637",
+        "clockMethodLong_either": "QR \u0623\u0648 \u0627\u0644\u0645\u0648\u0642\u0639 (\u0645\u064F\u0648\u0635\u0649 \u0628\u0647)",
+        "clockMethodLong_qr": "\u0645\u0633\u062D QR \u0641\u0642\u0637",
+        "clockMethodLong_gps": "\u0627\u0644\u0645\u0648\u0642\u0639 \u0641\u0642\u0637 (\u0628\u062F\u0648\u0646 \u0645\u0633\u062D)",
+        "useLocationInstead": "\u0644\u0627 \u062A\u0648\u062C\u062F \u0643\u0627\u0645\u064A\u0631\u0627\u061F \u0627\u0633\u062A\u062E\u062F\u0645 \u0645\u0648\u0642\u0639\u064A \u0628\u062F\u0644\u0627\u064B \u0645\u0646 \u0630\u0644\u0643",
+        "clockInHere": "\u0633\u062C\u0651\u0644 \u0627\u0644\u062D\u0636\u0648\u0631 \u0647\u0646\u0627",
+        "clockOutHere": "\u0633\u062C\u0651\u0644 \u0627\u0644\u0627\u0646\u0635\u0631\u0627\u0641 \u0647\u0646\u0627",
+        "gpsClockHint": "\u064A\u062C\u0628 \u0623\u0646 \u062A\u0643\u0648\u0646 \u0641\u064A \u0627\u0644\u0645\u0637\u0639\u0645. \u0633\u064A\u0637\u0644\u0628 \u0647\u0627\u062A\u0641\u0643 \u0645\u0634\u0627\u0631\u0643\u0629 \u0645\u0648\u0642\u0639\u0643 \u0645\u0631\u0629 \u0648\u0627\u062D\u062F\u0629.",
+        "eitherHint": "\u0627\u0645\u0633\u062D \u0631\u0645\u0632 QR \u0639\u0646\u062F \u0627\u0644\u0628\u0627\u0628\u060C \u0623\u0648 \u0627\u0633\u062A\u062E\u062F\u0645 \u0645\u0648\u0642\u0639\u0643 \u0625\u0630\u0627 \u0643\u0646\u062A \u0636\u0645\u0646 \u0646\u0637\u0627\u0642 \u0627\u0644\u0645\u0637\u0639\u0645.",
+        "orUseLocation": "\u064A\u0645\u0643\u0646\u0643 \u0627\u0633\u062A\u062E\u062F\u0627\u0645 \u0645\u0648\u0642\u0639\u0643 \u0628\u062F\u0644\u0627\u064B \u0645\u0646 \u0630\u0644\u0643."
       };
     }
   });
@@ -14769,6 +14811,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
         clock: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'),
         scooter: svg('<circle cx="6" cy="17" r="2.5"/><circle cx="18" cy="17" r="2.5"/><path d="M8.5 17h7M15 17l-2-8h3l2 5.5M13 9h-3"/><path d="M4 12h5v3"/>'),
         chat: svg('<path d="M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-8l-4 3.5V16H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/><path d="M8 9.5h8M8 12.5h5"/>'),
+        pin: svg('<path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/>'),
         qr: svg('<path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4z"/><path d="M14 14h2v2h-2zM18 14h2M14 18h2M18 18h2v2"/>'),
         wallet: svg('<path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H18v3"/><rect x="4" y="8" width="16" height="11" rx="2"/><path d="M16 13.5h2"/>'),
         receipt: svg('<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/>'),
@@ -16034,13 +16077,13 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
       );
     });
   }
-  async function zoneClock({ out = false, locationId, code, breakMinutes = 0, checkLocation = true }) {
-    const where2 = { locationId, code, ...checkLocation ? await position() : {} };
+  async function zoneClock({ out = false, locationId, code, breakMinutes = 0, checkLocation = true, gps = false }) {
+    const where2 = gps ? await position() : { locationId, code, ...checkLocation ? await position() : {} };
     return out ? api.post(bpath("/attendance/clock-out"), { breakMinutes, ...where2 }) : api.post(bpath("/attendance/clock-in"), where2);
   }
   function clockError(err) {
     if (err?.code?.startsWith?.("geo_") || err?.code?.startsWith?.("cam_")) return t(`e.${err.code}`);
-    if (err?.code === "outside_zone" && err.details) return t("e.outside_zone_far", { m: err.details.distance, place: err.details.location });
+    if (err?.code === "outside_zone" && err.details) return t("e.outside_zone_far", { m: err.details.distance, place: err.details.location, r: err.details.radius });
     return errorMessage(err);
   }
   function readDoorQr(text) {
@@ -16135,32 +16178,37 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
     navigator.vibrate?.(out ? [30, 60, 30] : 40);
   }
   async function zoneSheet({ out, onDone, clock }) {
-    const cfg = clock || (await api.get(bpath("/me/week"))).clock || { checkLocation: true, typedCode: false };
+    const cfg = clock || (await api.get(bpath("/me/week"))).clock || { method: "qr", checkLocation: true, typedCode: false };
+    const method = cfg.method || "qr";
+    const scan = method !== "gps";
     const sheet = openSheet({
       title: out ? t("clockOut") : t("clockIn"),
       body: html`${out ? html`<div class="field"><label class="label" for="z-brk">${t("breakMinutes")}</label>
         <input class="input" id="z-brk" type="number" min="0" max="600" value="0" inputmode="numeric"></div>` : ""}
-      <div class="scanner" id="scanner"><video id="z-video" aria-label="${t("cameraView")}"></video><span class="scan-frame" aria-hidden="true"><i></i></span>
-        <p class="scan-msg" id="z-msg" role="status">${t("pointAtQr")}</p></div>
+      ${scan ? html`<div class="scanner" id="scanner"><video id="z-video" aria-label="${t("cameraView")}"></video><span class="scan-frame" aria-hidden="true"><i></i></span>
+        <p class="scan-msg" id="z-msg" role="status">${t("pointAtQr")}</p></div>` : html`<div class="gps-state" id="z-gps" role="status"><span class="gps-pin" aria-hidden="true">${ICON.pin}</span><p id="z-msg">${t("gpsClockHint")}</p></div>`}
       <div class="form-error" role="alert" id="z-err"></div>
-      ${cfg.typedCode ? html`<form id="zone-form" novalidate class="typed-code"><label class="label" for="z-code">${t("orTypeCode")}</label>
+      ${method !== "qr" ? html`<button class="btn ${scan ? "" : "primary"} block" type="button" id="z-gps-go">${ICON.pin}${scan ? t("useLocationInstead") : out ? t("clockOutHere") : t("clockInHere")}</button>` : ""}
+      ${scan && cfg.typedCode ? html`<form id="zone-form" novalidate class="typed-code"><label class="label" for="z-code">${t("orTypeCode")}</label>
         <div class="row-gap"><input class="input code-input" id="z-code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" dir="ltr" placeholder="••••••">
         <button class="btn" type="submit">${t("continue")}</button></div></form>` : ""}
-      <p class="hint">${cfg.checkLocation ? t("locationPrivacy") : t("scanOnlyHint")}</p>`
+      <p class="hint">${method === "qr" ? cfg.checkLocation ? t("locationPrivacy") : t("scanOnlyHint") : method === "gps" ? t("locationPrivacy") : t("eitherHint")}</p>`
     });
     const err = $("#z-err", sheet);
     const msg = $("#z-msg", sheet);
+    const box = $("#scanner", sheet) || $("#z-gps", sheet);
     let busyNow = false;
     let stop = () => {
     };
-    const go2 = async ({ locationId, code }) => {
+    const go2 = async ({ locationId, code, gps = false }) => {
       if (busyNow) return;
       busyNow = true;
       err.textContent = "";
-      msg.textContent = cfg.checkLocation ? t("findingLocation") : t("checking");
-      $("#scanner", sheet).classList.add("got");
+      const idle = msg.textContent;
+      msg.textContent = gps || cfg.checkLocation ? t("findingLocation") : t("checking");
+      box.classList.add("got");
       try {
-        const r = await zoneClock({ out, locationId, code, checkLocation: cfg.checkLocation, breakMinutes: Number($("#z-brk", sheet)?.value || 0) });
+        const r = await zoneClock({ out, locationId, code, gps, checkLocation: cfg.checkLocation, breakMinutes: Number($("#z-brk", sheet)?.value || 0) });
         stop();
         celebrate($(".sbody", sheet) || sheet, { out, at: out ? r.clockOut : r.clockIn });
         setTimeout(() => {
@@ -16169,16 +16217,18 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
         }, 1900);
       } catch (e) {
         busyNow = false;
-        $("#scanner", sheet).classList.remove("got");
-        msg.textContent = t("pointAtQr");
+        box.classList.remove("got");
+        msg.textContent = idle;
         err.textContent = clockError(e);
       }
     };
+    $("#z-gps-go", sheet)?.addEventListener("click", () => go2({ gps: true }));
     $("#zone-form", sheet)?.addEventListener("submit", async (e) => {
       e.preventDefault();
       const locs = (await api.get(bpath("/locations"))).filter((l) => !l.archivedAt && l.latitude !== null);
       go2({ locationId: locs[0]?.id, code: $("#z-code", sheet).value });
     });
+    if (!scan) return;
     try {
       stop = await startScanner($("#z-video", sheet), (text) => {
         const qr = readDoorQr(text);
@@ -16192,7 +16242,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
     } catch (e) {
       $("#scanner", sheet).classList.add("off");
       msg.textContent = "";
-      err.textContent = clockError(e);
+      err.textContent = method === "either" ? `${clockError(e)} ${t("orUseLocation")}` : clockError(e);
     }
     const video = $("#z-video", sheet);
     const watch = setInterval(() => {
@@ -16450,7 +16500,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
         <b class="num">${time(todayShift.startsAt)} – ${time(todayShift.endsAt)}</b>
         <span class="muted">${[todayShift.departmentName, todayShift.locationName, todayShift.breakMinutes ? t("breakMin", { n: todayShift.breakMinutes }) : null].filter(Boolean).join(" \xB7 ")}</span>
       </div></div>` : html`<p class="muted">${t("noShiftToday")}</p>`}
-    <button class="btn ${clocked ? "" : "primary"} block clock-btn" type="button" id="clock">${week.zoneRequired ? ICON.qr : ICON.clock}${clocked ? t("clockOut") : t("clockIn")}</button>
+    <button class="btn ${clocked ? "" : "primary"} block clock-btn" type="button" id="clock">${week.zoneRequired ? week.clock?.method === "gps" ? ICON.pin : ICON.qr : ICON.clock}${clocked ? t("clockOut") : t("clockIn")}</button>
   </section>`;
   }
   function wireClock(view, body, week) {
@@ -19506,7 +19556,7 @@ ${text}
         ${card("sched", t("schedulingRules"), t("schedulingRulesBody"), kv([[t("maxWeeklyHours"), s.scheduling.maxWeeklyHours], [t("maxShiftHours"), s.scheduling.maxShiftHours], [t("minRestHours"), s.scheduling.minRestHours]]), editBtn("sched"))}
         ${card("pay", t("payrollSettings"), "", kv([[t("payFrequency"), t(`freq_${s.payroll.frequency}`)], [t("weekStartsOn"), dayName(s.payroll.weekStartsOn)], [t("overtimeAfter"), `${s.payroll.overtimeWeeklyHours} ${t("hoursShort")}`], [t("overtimeRate"), `\xD7${s.payroll.overtimeMultiplier}`]]), editBtn("pay"))}
         ${card("appr", t("approvalRules"), t("approvalRulesBody"), kv([[t("ownerApprovalOver"), money(s.approvals.expenseOwnerOver)]]), editBtn("appr"))}
-        ${card("zone", t("clockZone"), t("clockZoneBody"), kv([[t("requireZone"), s.attendance.requireZone ? t("on") : t("off")], [t("checkLocation"), s.attendance.checkLocation !== false ? t("on") : t("off")], [t("typedCode"), s.attendance.typedCode ? t("on") : t("off")], [t("locationsWithPosition"), String(locs.filter((l) => !l.archivedAt && l.latitude !== null).length)]]), editBtn("zone"))}
+        ${card("zone", t("clockZone"), t("clockZoneBody"), kv([[t("requireZone"), s.attendance.requireZone ? t("on") : t("off")], [t("clockMethod"), t(`clockMethod_${s.attendance.method || "qr"}`)], [t("checkLocation"), s.attendance.checkLocation !== false ? t("on") : t("off")], [t("typedCode"), s.attendance.typedCode ? t("on") : t("off")], [t("locationsWithPosition"), String(locs.filter((l) => !l.archivedAt && l.latitude !== null).length)]]), editBtn("zone"))}
         ${card("alerts", t("alertThresholds"), t("alertThresholdsBody"), kv([[t("alert_payroll"), `${s.alerts.payrollIncreasePct}%`], [t("alert_category"), `${s.alerts.categoryIncreasePct}%`], [t("alert_revenue"), `${s.alerts.revenueDropPct}%`], [t("alert_overtime"), `${s.alerts.overtimeIncreasePct}%`], [t("alert_margin"), `${s.alerts.marginBelowPct}%`], [t("alert_large"), money(s.alerts.largeExpense)]]), editBtn("alerts"))}
         ${can("security.manage") ? card("sec", t("authSettings"), t("authSettingsBody"), kv([[t("requirePhone"), s.auth.requirePhoneVerification ? t("on") : t("off")]]), html`<button class="btn small" type="button" data-edit="sec">${t("edit")}</button>`) : ""}
       </div><div>
@@ -19579,6 +19629,7 @@ ${text}
           intro: t("clockZoneBody"),
           fields: [
             { name: "requireZone", label: t("requireZoneLong"), type: "checkbox", value: s.attendance.requireZone },
+            { name: "method", label: t("clockMethod"), type: "seg", full: true, value: s.attendance.method || "qr", options: ["either", "qr", "gps"].map((k) => [k, t(`clockMethodLong_${k}`)]) },
             { name: "checkLocation", label: t("checkLocationLong"), type: "checkbox", value: s.attendance.checkLocation !== false },
             { name: "typedCode", label: t("typedCodeLong"), type: "checkbox", value: !!s.attendance.typedCode }
           ],
@@ -19623,7 +19674,7 @@ ${text}
             { name: "address", label: t("address"), value: l?.address || "", optional: true },
             { name: "latitude", label: t("latitude"), type: "number", value: l?.latitude ?? "", optional: true, attrs: 'step="any" dir="ltr"' },
             { name: "longitude", label: t("longitude"), type: "number", value: l?.longitude ?? "", optional: true, attrs: 'step="any" dir="ltr"' },
-            { name: "radiusM", label: t("zoneRadius"), type: "number", value: l?.radiusM ?? 100, hint: t("zoneRadiusHint"), attrs: 'min="20" max="2000" step="10"' },
+            { name: "radiusM", label: t("zoneRadius"), type: "number", value: l?.radiusM ?? 200, hint: t("zoneRadiusHint"), attrs: 'min="20" max="2000" step="10"' },
             { name: "doorMode", label: t("doorCodeType"), type: "seg", full: true, value: l?.doorMode || "screen", options: [["screen", t("doorMode_screen")], ["daily", t("doorMode_daily")]] },
             l ? { name: "archived", label: t("archived"), type: "checkbox", value: !!l.archivedAt } : null
           ], onSubmit: async (v) => {

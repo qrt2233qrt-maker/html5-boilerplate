@@ -136,7 +136,7 @@ export async function zoneSheet({ out, onDone, clock }) {
         <p class="scan-msg" id="z-msg" role="status">${t('pointAtQr')}</p></div>`
         : html`<div class="gps-state" id="z-gps" role="status"><span class="gps-pin" aria-hidden="true">${ICON.pin}</span><p id="z-msg">${t('gpsClockHint')}</p></div>`}
       <div class="form-error" role="alert" id="z-err"></div>
-      ${method !== 'qr' ? html`<button class="btn ${scan ? '' : 'primary'} block" type="button" id="z-gps-go">${ICON.pin}${scan ? t('useMyLocation') : (out ? t('clockOutHere') : t('clockInHere'))}</button>` : ''}
+      ${method !== 'qr' ? html`<button class="btn ${scan ? '' : 'primary'} block" type="button" id="z-gps-go">${ICON.pin}${scan ? t('useLocationInstead') : (out ? t('clockOutHere') : t('clockInHere'))}</button>` : ''}
       ${scan && cfg.typedCode ? html`<form id="zone-form" novalidate class="typed-code"><label class="label" for="z-code">${t('orTypeCode')}</label>
         <div class="row-gap"><input class="input code-input" id="z-code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" dir="ltr" placeholder="••••••">
         <button class="btn" type="submit">${t('continue')}</button></div></form>` : ''}
