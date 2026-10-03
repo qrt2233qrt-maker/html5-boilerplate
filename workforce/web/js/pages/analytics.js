@@ -1,7 +1,7 @@
 // Analytics centre (spec §11-14, §24-25, §40-41): headline numbers first,
 // then charts, drill-downs, workforce numbers and smart alerts.
 import { api } from '../api.js';
-import { LANG, t } from '../i18n.js';
+import { LANG, t, tn } from '../i18n.js';
 import { S, bpath, can } from '../state.js';
 import { dateShort, dayLabel, hours, money, moneyShort, num, pct } from '../fmt.js';
 import { barChart, chartCard, donut, lineChart } from '../charts.js';
@@ -148,9 +148,9 @@ async function sections(body, r) {
         <span class="seg s1" data-w="${(x.labour / max) * 100}"></span><span class="seg s2" data-w="${(x.expenses / max) * 100}"></span></div>
       <p class="t2 muted">${[
         x.total ? t('shareOfCosts', { p: pct(x.share, 0) }) : null,
-        x.people !== null ? t('peopleCount', { n: num(x.people, 0) }) : null,
+        x.people !== null ? tn('peopleN', x.people) : null,
         x.hoursWorked ? hours(x.hoursWorked) : null,
-        x.trips ? t('tripsCount', { n: num(x.trips, 0) }) : null,
+        x.trips ? tn('tripsN', x.trips) : null,
         ...x.topCategories.slice(0, 3).map((c) => `${c.icon || ''} ${nm(c)} ${moneyShort(c.amount)}`),
       ].filter(Boolean).join(' · ')}</p></div>`)}</div>
     <p class="hint">${t('sectionHint')}</p>`);

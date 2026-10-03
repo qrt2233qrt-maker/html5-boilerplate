@@ -26,6 +26,11 @@ export const requestsPage = {
   },
 };
 
+document.addEventListener('requests:changed', () => {
+  const view = $('#view');
+  if (location.hash.startsWith('#/requests') && view && $('#body', view)) draw(view);
+});
+
 async function startNew(kind) {
   if (kind === 'time_off') return timeOffSheet();
   // Pick one of my upcoming shifts first.

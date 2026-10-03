@@ -253,6 +253,9 @@ async function myShift(view, query, s) {
   });
 }
 
+// Lets an open "My requests" list show what was just sent.
+const requestsChanged = () => document.dispatchEvent(new Event('requests:changed'));
+
 export function changeSheet(s) {
   const a = isoToZoned(s.startsAt);
   const b = isoToZoned(s.endsAt);
@@ -269,7 +272,7 @@ export function changeSheet(s) {
       try {
         await api.post(bpath('/shift-requests'), { type: 'change', shiftId: s.id, startsAt: zonedToIso(v.day, v.start), endsAt: zonedToIso(endDay, v.end), reason: v.reason });
       } catch (err) { const tx = problemText(err); if (tx) err.message = tx; throw err; }
-      toast(t('requestSent'));
+      toast(t('requestSent')); requestsChanged();
     },
   });
 }
@@ -286,7 +289,7 @@ export async function swapSheet(s) {
     onSubmit: async (v, btn, form) => {
       if (!v.target) { form.querySelector('#err-target').textContent = t('e.required'); return false; }
       try { await api.post(bpath('/swaps'), { myShiftId: s.id, targetShiftId: v.target, reason: v.reason || null }); } catch (err) { const tx = problemText(err); if (tx) err.message = tx; throw err; }
-      toast(t('swapSent'));
+      toast(t('swapSent')); requestsChanged();
     },
   });
 }
@@ -295,7 +298,7 @@ function offerSheet(s) {
   formSheet({
     title: t('giveAway'), intro: `${shiftRange(s)} — ${t('giveAwayBody')}`, submitLabel: t('offerShift'),
     fields: [{ name: 'reason', label: t('reason'), type: 'textarea', optional: true, full: true }],
-    onSubmit: async (v) => { await api.post(bpath('/shift-requests'), { type: 'offer', shiftId: s.id, reason: v.reason || null }); toast(t('offerSent')); },
+    onSubmit: async (v) => { await api.post(bpath('/shift-requests'), { type: 'offer', shiftId: s.id, reason: v.reason || null }); toast(t('offerSent')); requestsChanged(); },
   });
 }
 
@@ -310,7 +313,7 @@ export function timeOffSheet() {
     ],
     onSubmit: async (v) => {
       await api.post(bpath('/shift-requests'), { type: 'time_off', startsAt: zonedToIso(v.from, '00:00'), endsAt: zonedToIso(addDays(v.to, 1), '00:00'), reason: v.reason });
-      toast(t('requestSent'));
+      toast(t('requestSent')); requestsChanged();
     },
   });
 }

@@ -184,7 +184,7 @@ async function joinBusiness(db, req, inv, userId) {
   if (payRate !== undefined) {
     await db.query(
       `INSERT INTO pay_rates (business_id, membership_id, pay_type, rate, effective_from, note, created_by, frequency)
-       VALUES ($1, $2, $3, $4, coalesce($5::date, CURRENT_DATE), 'Set at invitation', $6, $7)`,
+       VALUES ($1, $2, $3, $4, coalesce($5::date, (now() AT TIME ZONE (SELECT timezone FROM businesses WHERE id = $1))::date), 'Set at invitation', $6, $7)`,
       [inv.business_id, m.id, payType || 'salaried', payRate, profile.startDate || null, inv.invited_by, payFrequency || null]);
   }
   await db.query('UPDATE invitations SET accepted_at = now(), accepted_user_id = $2 WHERE id = $1', [inv.id, userId]);

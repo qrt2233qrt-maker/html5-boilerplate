@@ -179,6 +179,28 @@ describe('delivery trips and pay frequency (PizzaRita)', function () {
     assert.equal(pnl.laborCost, 15 * 2500);
   });
 
+  it('pays hours and trips recorded before someone\'s first pay rate, but not salary', async () => {
+    const { owner, mgr, cook, B } = await restaurant(t);
+    const driver = await addMember(t, owner, (await owner.refresh()).businesses[0].id, { email: 'driver@pizzarita.test', name: 'Yousif Driver' });
+    const sat = pastSaturday();
+    // Added to the app on Monday, but they started on Saturday.
+    await owner.post(B(`/members/${driver.membershipId}/pay-rates`), { payType: 'per_trip', rate: 2500, effectiveFrom: plus(sat, 2), frequency: 'weekly' });
+    await owner.post(B(`/members/${cook.membershipId}/pay-rates`), { payType: 'hourly', rate: 5000, effectiveFrom: plus(sat, 2), frequency: 'weekly' });
+    await owner.post(B(`/members/${mgr.membershipId}/pay-rates`), { payType: 'salaried', rate: 3000000, effectiveFrom: plus(sat, 2), frequency: 'weekly' });
+    // Trips can be entered for Saturday even though the rate starts Monday.
+    assert.equal((await mgr.member.get(B(`/trips?from=${sat}&to=${sat}`))).body.drivers.length, 1);
+    assert.equal((await mgr.member.put(B('/trips'), { day: sat, entries: [{ membershipId: driver.membershipId, trips: 10 }] })).status, 200);
+    await workDay(t, owner, B, cook.membershipId, sat, 4);
+    const run = (await owner.post(B('/payroll/runs'), { date: sat, frequency: 'weekly' })).body;
+    const of = (id) => run.people.find((x) => x.membershipId === id);
+    assert.equal(of(driver.membershipId).trips, 10 * 2500);
+    assert.equal(of(cook.membershipId).base, 4 * 5000);
+    // The salary starts on Monday: Monday to Friday only.
+    const inMonth = (d) => new Date(Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)), 0)).getUTCDate();
+    const expected = [2, 3, 4, 5, 6].reduce((a, n) => a + 3000000 / inMonth(plus(sat, n)), 0);
+    assert.equal(of(mgr.membershipId).base, Math.round(expected));
+  });
+
   it('moves someone from weekly to daily pay mid-week without paying any day twice', async () => {
     const { owner, cook, B } = await restaurant(t);
     const sat = pastSaturday();

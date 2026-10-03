@@ -20,11 +20,13 @@ and dark themes.
 | People | Profiles, departments with managers (a department manager sees only their people), locations, pay-rate history with effective dates, private documents, encrypted personal details and emergency contact. Make or remove a manager, suspend, end employment (cancels future shifts, keeps all history), archive, or permanently delete only when no records must be kept. |
 | Scheduling | Week grid with drafts and publishing, copy last week, open shifts, unavailability. Rules checked on every change: overlaps, rest between shifts, weekly hours, shift length, time off. Every change keeps history (who, when, why, before and after). |
 | Requests and swaps | Change and time-off requests, giving a shift away, and two-person swaps (colleague accepts, then a manager approves), each re-validated against the rules when approved. |
-| Attendance | Clock in and out with breaks, manager corrections with history, missed shifts and lateness, locked once the period is paid. |
-| Payroll | Weekly, two-weekly or monthly runs: hourly pay from attendance at the rate in force each day, weekly overtime, prorated salaries, bonuses, deductions, adjustments, expense repayments. Draft → finalized → paid; statements show 🟢 Paid, 🟡 Pending, 🔴 Requires review. Paid runs are locked. |
+| Attendance | Clock in and out with breaks, manager corrections with history, missed shifts and lateness, locked once the day is paid. **Clock-in zone:** staff clock in and out only at the restaurant, by scanning the QR code on the door tablet (it changes every minute) or typing the code under it, with the phone's position inside the set radius (default 100 m). The location is read only at those two moments. |
+| Payroll | Each person is paid daily, weekly, every two weeks or monthly, set per person and changeable at any time. Hourly pay from attendance at the rate in force each day, salaries spread over the days, **delivery drivers paid per trip** from the trips a manager enters each day, weekly overtime (also for daily-paid staff), bonuses, deductions, adjustments, expense repayments. Every day is paid exactly once, even after someone's frequency changes. Draft → finalized → paid; statements show 🟢 Paid, 🟡 Pending, 🔴 Requires review. Paid days are locked. |
+| Team chat | One chat for the whole team, and private one-to-one chats only the two people can read (the owner included). "Discuss" on a holiday or shift request opens a private chat with the manager about it. Unread counts on the Chat tab; the owner can remove team-chat messages (recorded in the activity log); people who leave lose access. |
 | Employee expenses | Claims with receipt photos (compressed on the phone), manager approval, owner approval above a threshold, rejection reasons, resubmission, repayment through payroll. |
 | Business finance | Expenses with categories and receipts, recurring expenses (daily to yearly or every N days) recorded automatically, revenue with refunds and adjustments, budgets with 80% and 100% alerts. Edits keep history; records are archived, not deleted. |
-| Insights | Owner dashboard ("How is my business doing?"), analytics with date presets (today to last year, or custom), each compared with the matching earlier period, accessible charts with table views, expense drill-down, payroll and workforce analytics, and smart alerts with owner-set thresholds. |
+| Insights | Owner dashboard ("How is my business doing?"), analytics with date presets (today to last year, or custom), each compared with the matching earlier period, accessible charts with table views, expense drill-down, **costs by section** (kitchen, front of house, delivery: staff pay plus that section's expenses), **sales by channel** (dine-in, takeaway, delivery), payroll and workforce analytics, and smart alerts with owner-set thresholds. |
+| Restaurant setup | Choosing "Restaurant or café" at sign-up (or Settings → Restaurant setup) adds the Kitchen, Front of house and Delivery sections, food, drinks, packaging, cooking-gas, delivery-commission and food-waste expense categories, and dine-in, takeaway and delivery sales. |
 | Reports | 10 reports (P&L, expenses, revenue, payroll, attendance, shifts, people…) with CSV and Excel export and print-to-PDF. Exports are built in the background and kept private. |
 | Everything else | In-app notifications with email and SMS copies by preference, global search, an append-only activity log, and import from the Business Expenses app's CSV export. |
 
@@ -72,14 +74,17 @@ createdb workforce_test
 TEST_DATABASE_URL=postgres://localhost/workforce_test npm test
 ```
 
-65 tests cover sign-up, verification, sign-in, 2FA, sessions, CSRF and rate
+84 tests cover sign-up, verification, sign-in, 2FA, sessions, CSRF and rate
 limits; invitations, roles, permission overrides and attempts by employees
 and managers to call owner endpoints directly; department scoping and
 separation between businesses; schedule rules, swaps, requests and
 attendance locks; payroll (overtime, proration, locking), expense approvals,
 idempotent money requests, recurring expenses, P&L and budgets; analytics,
 alerts, reports and private exports, search and both import formats; and the
-append-only activity log. GitHub Actions runs them, with lint, on every change
+append-only activity log; and for the restaurant, the clock-in zone (code,
+distance, accuracy, rotation), per-trip pay, per-person pay frequency without
+paying any day twice, team and private chat (privacy, moderation, leavers,
+discussing a request), and costs by section. GitHub Actions runs them, with lint, on every change
 to `workforce/`.
 
 ## Configuration

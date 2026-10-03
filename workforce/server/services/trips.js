@@ -16,11 +16,12 @@ export async function listTrips(app, req, { from, to, mine }) {
   if (self) { params.push(req.member.id); cond = `m.id = $${params.length}`; } else cond = scopeSql(await managedScope(req), params);
   const { rows: drivers } = await db.query(
     `SELECT m.id AS "membershipId", u.name, d.name AS "departmentName",
-            (SELECT row_to_json(x) FROM (SELECT rate, frequency FROM pay_rates p WHERE p.membership_id = m.id AND p.effective_from <= $3
-               ORDER BY effective_from DESC, created_at DESC LIMIT 1) x) AS pay
+            (SELECT row_to_json(x) FROM (SELECT rate, frequency FROM pay_rates p WHERE p.membership_id = m.id
+               ORDER BY (p.effective_from <= $3) DESC, CASE WHEN p.effective_from <= $3 THEN p.effective_from END DESC NULLS LAST, p.effective_from, p.created_at DESC LIMIT 1) x) AS pay
        FROM memberships m JOIN users u ON u.id = m.user_id LEFT JOIN departments d ON d.id = m.department_id
       WHERE m.business_id = $1 AND m.status IN ('active', 'suspended', 'terminated') AND ${cond}
-        AND EXISTS (SELECT 1 FROM pay_rates p WHERE p.membership_id = m.id AND p.pay_type = 'per_trip' AND p.effective_from <= $3)
+        AND (EXISTS (SELECT 1 FROM pay_rates p WHERE p.membership_id = m.id AND p.pay_type = 'per_trip' AND p.effective_from <= $3)
+          OR (SELECT pay_type FROM pay_rates p WHERE p.membership_id = m.id ORDER BY effective_from, created_at LIMIT 1) = 'per_trip')
         AND (m.end_date IS NULL OR m.end_date >= $2)
       ORDER BY u.name`, params);
   const ids = drivers.map((x) => x.membershipId);
@@ -40,7 +41,9 @@ export async function saveTrips(app, req, { day, entries }) {
       if (!(await inScope(req, e.membershipId))) throw forbidden();
       const { rows: [driver] } = await db.query(
         `SELECT 1 FROM memberships m WHERE m.id = $1 AND m.business_id = $2
-           AND EXISTS (SELECT 1 FROM pay_rates p WHERE p.membership_id = m.id AND p.pay_type = 'per_trip' AND p.effective_from <= $3)`,
+           AND coalesce(
+             (SELECT pay_type FROM pay_rates p WHERE p.membership_id = m.id AND p.effective_from <= $3 ORDER BY effective_from DESC, created_at DESC LIMIT 1),
+             (SELECT pay_type FROM pay_rates p WHERE p.membership_id = m.id ORDER BY effective_from, created_at LIMIT 1)) = 'per_trip'`,
         [e.membershipId, req.member.businessId, day]);
       if (!driver) throw badRequest('not_a_driver', 'Only people paid per trip have trips.');
       if (await dayPaid(db, e.membershipId, day)) {

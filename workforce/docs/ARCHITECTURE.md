@@ -265,7 +265,7 @@ Each phase ships with migrations, API, UI, tests and an update to this document.
 
 ### Phases 2–16 notes
 
-- All sixteen phases are built: 65 server tests, a browser walkthrough of every screen for all three roles (desktop in English, phone in Arabic), and interactive checks of the main workflows (swap, clock-in, claim and approval, adding shifts against the rules, drill-down, payroll, export, search).
+- All sixteen phases are built: 65 server tests at the time (84 with the restaurant additions), a browser walkthrough of every screen for all three roles (desktop in English, phone in Arabic), and interactive checks of the main workflows (swap, clock-in, claim and approval, adding shifts against the rules, drill-down, payroll, export, search).
 - **Approvals (Phase 7)** are one configurable rule rather than a general rule builder: a manager approves employee expenses, and claims above an owner-set amount also need the owner. The `approvals` table records every step, so more steps can be added later without a migration.
 - **PDF (Phase 13)** comes from the browser's print dialog with a print stylesheet. CSV and Excel files are generated on the server in the background.
 - **Payroll (Phase 6)** calculates gross pay, overtime, bonuses, deductions and repayments. It does not calculate taxes or social security, or send money.
@@ -273,6 +273,18 @@ Each phase ships with migrations, API, UI, tests and an update to this document.
 - **Performance (Phase 16):** indexes reviewed (`003_performance.sql`); on six months of demo data the heaviest endpoints answer in under 25 ms at the 95th percentile.
 - **Deployment (Phase 16):** a Dockerfile (non-root, health check), Docker Compose with PostgreSQL and nightly backups, and [DEPLOY.md](DEPLOY.md). Hosting itself still has to be chosen and paid for.
 - **Security (Phase 15):** see [SECURITY.md](SECURITY.md) for the controls, the review findings and the pre-launch checklist.
+
+### Restaurant additions (PizzaRita)
+
+Asked for after the sixteen phases, for a restaurant with kitchen, front of
+house and delivery drivers (`004_restaurant.sql`, `005_sections.sql`):
+
+- **Clock-in zone** (`server/lib/geo.js`, `services/attendance.js`, `web/js/clock.js`): each location has a position, a radius and a secret. The door screen (`#/door`) shows a QR code linking to `#/clock?l=<location>&c=<code>`, with a 6-digit code that changes every minute (the previous minute is still accepted), or a daily code to print. Clock-in and clock-out check the code, the phone's accuracy (≤ 150 m) and the distance (≤ radius plus a little of the accuracy). Errors: `zone_required`, `invalid_door_code`, `location_needed`, `location_inaccurate`, `outside_zone` (with the distance).
+- **Pay frequency per person:** `pay_rates.frequency` (empty = the business default). A payroll run is for one frequency; a day belongs to the run whose frequency the person's rate has that day, and `payroll_statements.days` records exactly which days each statement paid, so changing someone's frequency never pays a day twice or skips one. Hours and trips recorded before someone's first pay rate are paid at that first rate; a salary runs only from its effective date.
+- **Per-trip pay:** pay type `per_trip`; managers enter each driver's trips per day (`delivery_trips`, history kept, locked once paid); payroll adds a `trips` line (trips × the rate that day).
+- **Chat** (`services/chat.js`, `web/js/pages/chat.js`): `chat_threads` (one `team` thread per business, one `direct` thread per pair), `chat_messages`, `chat_reads` for unread counts. The page polls every 4 seconds while a conversation is open (16 when the tab is hidden) and the unread badge every 30 seconds; WebSockets weren't needed at this size. A message can reference a shift request (`ref_type = 'shift_request'`), only in a private chat between the requester and someone else.
+- **Sections:** departments are the restaurant's sections. `GET /analytics/sections` sums business expenses tagged to a section, approved staff claims and payroll (base, overtime, trips, bonuses, adjustments) by section. Statements and claims store the section the person was in at the time (filled in by a trigger), so moving someone doesn't rewrite past months. Sales by channel are the revenue categories.
+- **Restaurant preset:** `businesses.kind`; `POST /setup/restaurant` adds the sections and categories and can be repeated safely.
 
 ### Importing the current expenses app (Phase 8)
 

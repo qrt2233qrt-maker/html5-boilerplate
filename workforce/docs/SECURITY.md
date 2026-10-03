@@ -60,6 +60,19 @@ contact the business owner running your server.
 - CSV exports neutralise spreadsheet formulas (cells starting with `=`, `+`, `-`, `@`).
 - Errors returned to the browser are generic and carry a request id; details stay in the server log.
 
+### Clock-in zone and location privacy
+
+- When the business requires it (on by default once a location has a position), clocking in or out needs both the current door code and the phone inside the radius. The code is an HMAC of the location's secret and the minute (or the day, for a printed code), so a photo of the QR stops working a minute later, and a code alone doesn't help someone who is outside.
+- Phone positions can be faked with developer tools or spoofing apps; the rotating code is what makes that insufficient on its own. Keep the door tablet inside, and reset a location's code (Settings → Locations) if the secret might have leaked.
+- The position is read only when someone clocks in or out, never in between. Staff are told so on the clock-in screen. Each record keeps the position, its accuracy and the distance from the door; only people with attendance permission see the distance.
+- Positions are kept with the attendance record as evidence of where it happened. Nothing deletes them automatically yet; a scheduled clean-up after a set time can be added if you want one.
+
+### Chat
+
+- Private chats are visible only to their two members. There is no owner or admin read access, and the API returns "not found" to anyone else.
+- Messages are never edited. A sender can remove their own, the owner can remove team-chat messages (audited); removed text isn't sent to anyone afterwards.
+- People who are suspended or leave lose access at once; their private chats become read-only for the other person. Sending is rate-limited per person.
+
 ### Data at rest and messages
 
 - 2FA secrets and personal details (national ID, date of birth, emergency contact) are encrypted with AES-256-GCM using `APP_ENCRYPTION_KEY`.
@@ -95,3 +108,4 @@ commissioning before storing data for many businesses.
 - [ ] Manager permissions reviewed under **Permissions** (for example, who sees payroll and personal details).
 - [ ] Server and PostgreSQL get operating-system security updates.
 - [ ] The demo script (`npm run demo`) has **not** been run against the production database.
+- [ ] Each location's position set from inside the building, the door tablet mounted indoors on the door screen, and staff told that location is checked only when clocking in and out.

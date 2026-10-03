@@ -54,13 +54,24 @@ async function calculate(db, biz, run, actorId) {
   const { rows: people } = await db.query(
     `SELECT m.id, m.profile->>'startDate' AS start_date, m.end_date::text AS end_date FROM memberships m
       WHERE m.business_id = $1 AND (m.status IN ('active', 'suspended') OR (m.status IN ('terminated', 'archived') AND m.end_date >= $2))
-        AND EXISTS (SELECT 1 FROM pay_rates p WHERE p.membership_id = m.id AND p.effective_from <= $3)`, [biz.id, start, end]);
+        AND EXISTS (SELECT 1 FROM pay_rates p WHERE p.membership_id = m.id)`, [biz.id, start]);
 
   for (const p of people) {
     const { rows: rates } = await db.query(
-      `SELECT pay_type, rate, frequency, effective_from::text AS from_day FROM pay_rates WHERE membership_id = $1 AND effective_from <= $2
-        ORDER BY effective_from DESC, created_at DESC`, [p.id, end]);
-    const rateOn = (day) => rates.find((r) => r.from_day <= day) || null;
+      `SELECT pay_type, rate, frequency, effective_from::text AS from_day FROM pay_rates WHERE membership_id = $1
+        ORDER BY effective_from DESC, created_at DESC`, [p.id]);
+    // Hours or trips recorded before someone's first pay rate (they started
+    // before being added to the app) are paid at that first rate. A salary
+    // only runs from its effective date.
+    const first = rates[rates.length - 1];
+    const { rows: workRows } = await db.query(
+      `SELECT DISTINCT (clock_in AT TIME ZONE $4)::date::text AS day FROM attendance
+        WHERE membership_id = $1 AND clock_out IS NOT NULL AND (clock_in AT TIME ZONE $4)::date BETWEEN $2 AND $3
+       UNION SELECT day::text FROM delivery_trips WHERE membership_id = $1 AND trips > 0 AND day BETWEEN $2 AND $3`,
+      [p.id, start, end, biz.timezone]);
+    const worked = new Set(workRows.map((w) => w.day));
+    const rateOn = (day) => rates.find((r) => r.from_day <= day)
+      || (first.pay_type !== 'salaried' && worked.has(day) ? first : null);
     const { rows: [paid] } = await db.query(
       `SELECT coalesce(array_agg(DISTINCT d::text), '{}') AS days FROM payroll_statements s, unnest(s.days) d
         WHERE s.membership_id = $1 AND s.run_id <> $2 AND d BETWEEN $3 AND $4`, [p.id, run.id, start, end]);
