@@ -37,4 +37,22 @@ describe('team timetable', function () {
     // Ranges are limited.
     assert.equal((await z.member.get(B(`/timetable?from=${day(0)}&to=${day(90)}`))).status, 400);
   });
+
+  it('has morning and night shifts and opening hours (4am–2am) that managers can change', async () => {
+    const { owner, businessId } = await ownerWithBusiness(t, { businessName: 'PizzaRita' });
+    const B = (p) => `/api/b/${businessId}${p}`;
+    const mgr = await addMember(t, owner, businessId, { email: 'omar@pizzarita.test', name: 'Omar', role: 'manager' });
+    const emp = await addMember(t, owner, businessId, { email: 'ali@pizzarita.test', name: 'Ali' });
+    const hours = (await emp.member.get(B('/settings'))).body.settings.hours;
+    assert.equal(hours.opensAt, '04:00');
+    assert.equal(hours.closesAt, '02:00');
+    assert.deepEqual(hours.shiftTypes.map((s) => [s.key, s.start, s.end]), [['morning', '04:00', '15:00'], ['night', '15:00', '02:00']]);
+    const body = { opensAt: '05:00', closesAt: '01:00', shiftTypes: [{ key: 'morning', name: 'Breakfast', start: '05:00', end: '14:00' }, { name: 'Late', start: '14:00', end: '01:00' }] };
+    assert.equal((await emp.member.put(B('/schedule/hours'), body)).status, 403);
+    const r = await mgr.member.put(B('/schedule/hours'), body);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.shiftTypes[1].key, 'shift2');
+    assert.equal((await owner.get(B('/settings'))).body.settings.hours.closesAt, '01:00');
+    assert.equal((await mgr.member.put(B('/schedule/hours'), { ...body, shiftTypes: [{ name: 'x', start: '25:00', end: '01:00' }] })).status, 400);
+  });
 });

@@ -2,6 +2,7 @@ import * as sched from '../services/scheduling.js';
 import * as requests from '../services/requests.js';
 import * as attendance from '../services/attendance.js';
 import * as trips from '../services/trips.js';
+import * as settingsService from '../services/settings.js';
 import { requirePermission } from '../auth/session.js';
 import { arr, bool, date, datetime, idParams, int, obj, oneOf, optStr, optUuid, params, range, str, uuid } from '../lib/schema.js';
 
@@ -29,6 +30,11 @@ export default async function schedulingRoutes(app) {
   app.post('/schedule/copy-week', { preHandler: p('schedules.manage'), schema: { params: params(), body: obj({ fromWeekStart: date, toWeekStart: date }, ['fromWeekStart', 'toWeekStart']) } },
     async (req) => sched.copyWeek(app, req, req.body));
   app.get('/me/week', async (req) => sched.myWeek(app, req));
+  const hhmm = { type: 'string', pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' };
+  app.put('/schedule/hours', {
+    preHandler: p('schedules.manage'),
+    schema: { params: params(), body: obj({ opensAt: hhmm, closesAt: hhmm, shiftTypes: arr(obj({ key: str(30, 0), name: str(40, 0), start: hhmm, end: hhmm }, ['start', 'end']), 8) }, ['opensAt', 'closesAt', 'shiftTypes']) },
+  }, async (req) => settingsService.saveHours(app, req, req.body));
   app.get('/timetable', { preHandler: p('self.schedule'), schema: { params: params(), querystring: obj({ ...range, departmentId: uuid }, ['from', 'to']) } },
     async (req) => sched.timetable(app, req, req.query));
   app.get('/staffing/today', { preHandler: p('schedules.view') }, async (req) => sched.todayStaffing(app, req));

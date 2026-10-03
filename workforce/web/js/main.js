@@ -75,8 +75,9 @@ function navItems() {
     { path: '/chat', icon: ICON.chat, label: t('chat'), show: true, tab: true, badge: 'chat' },
     { path: '/analytics', icon: ICON.chart, label: t('analytics'), show: finance || can('analytics.view'), tab: finance },
     { path: '/finance', icon: ICON.money, label: t('finance'), show: can('business_expenses.view') || can('revenue.view') || finance || can('budgets.manage'), tab: finance },
-    { path: '/timetable', icon: ICON.people, label: t('timetableShort'), show: can('self.schedule'), tab: !manager },
-    { path: '/schedule', icon: ICON.calendar, label: manager ? t('schedule') : t('mySchedule'), show: true, tab: !finance },
+    // One timetable for everyone (day, week, month); managers also get the editable schedule.
+    { path: '/timetable', icon: ICON.calendar, label: t('timetableShort'), show: can('self.schedule'), tab: true },
+    { path: '/schedule', icon: ICON.sliders, label: t('schedule'), show: manager, tab: manager && !finance },
     { path: '/approvals', icon: ICON.approve, label: t('approvals'), show: approvals, tab: approvals && !finance },
     { path: '/requests', icon: ICON.swap, label: t('myRequests'), show: can('self.requests') || can('self.swaps'), tab: !approvals },
     { path: '/attendance', icon: ICON.clock, label: t('attendance'), show: true },

@@ -8,6 +8,7 @@ import { empty, formSheet } from '../components.js';
 import { busy, closeSheet, confirmDialog, skeletonRows, toast, toastError } from '../ui.js';
 import { $, html, mount } from '../util.js';
 import { canOpenDoor, clockError, position } from '../clock.js';
+import { hoursSheet, typeName } from '../hours.js';
 
 const WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];
 const dayName = (d) => new Intl.DateTimeFormat(LANG === 'ar' ? 'ar-IQ' : 'en-GB', { weekday: 'long', timeZone: 'UTC' }).format(new Date(Date.UTC(2024, 0, 7 + d)));
@@ -37,6 +38,8 @@ export const settingsPage = {
         ${card('biz', t('businessInfo'), '', kv([[t('businessName'), info.name], [t('timezone'), info.timezone], [t('currency'), `${info.currency} (${info.currencyExponent} ${t('decimals')})`]]), editBtn('biz'))}
         ${manage ? card('rest', t('restaurantSetup'), info.kind === 'restaurant' ? t('restaurantSetupDone') : t('restaurantSetupBody'), '',
           html`<button class="btn small ${info.kind === 'restaurant' ? '' : 'primary'}" type="button" id="rest-setup">${info.kind === 'restaurant' ? t('addMissing') : t('setUp')}</button>`) : ''}
+        ${can('schedules.manage') ? card('hours', t('hoursAndShifts'), t('hoursAndShiftsBody'), kv([[t('openingHours'), `${(s.hours || {}).opensAt} – ${(s.hours || {}).closesAt}`],
+          ...((s.hours || {}).shiftTypes || []).map((x) => [typeName(x), `${x.start} – ${x.end}`])]), html`<button class="btn small" type="button" id="edit-hours">${t('edit')}</button>`) : ''}
         ${card('sched', t('schedulingRules'), t('schedulingRulesBody'), kv([[t('maxWeeklyHours'), s.scheduling.maxWeeklyHours], [t('maxShiftHours'), s.scheduling.maxShiftHours], [t('minRestHours'), s.scheduling.minRestHours]]), editBtn('sched'))}
         ${card('pay', t('payrollSettings'), '', kv([[t('payFrequency'), t(`freq_${s.payroll.frequency}`)], [t('weekStartsOn'), dayName(s.payroll.weekStartsOn)], [t('overtimeAfter'), `${s.payroll.overtimeWeeklyHours} ${t('hoursShort')}`], [t('overtimeRate'), `×${s.payroll.overtimeMultiplier}`]]), editBtn('pay'))}
         ${card('appr', t('approvalRules'), t('approvalRulesBody'), kv([[t('ownerApprovalOver'), money(s.approvals.expenseOwnerOver)]]), editBtn('appr'))}
@@ -68,6 +71,7 @@ export const settingsPage = {
         settingsPage.render(view);
       } catch (err) { busy(btn, false); toastError(err); }
     });
+    $('#edit-hours', view)?.addEventListener('click', () => hoursSheet(() => { S.settingsFor = null; settingsPage.render(view); }));
     const save = async (patch) => { await api.put(bpath('/settings'), patch); S.settingsFor = null; settingsPage.render(view); };
     const forms = {
       biz: () => formSheet({ title: t('businessInfo'), fields: [

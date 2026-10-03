@@ -865,3 +865,23 @@ tr.clickable:hover td { background: var(--surface-2); }
 .row.bill.overdue { border-inline-start: 4px solid var(--over); }
 .row.bill.soon { border-inline-start: 4px solid var(--warn); }
 .kpi.bad b { color: var(--over); }
+/* Timetable colours: you stand out, the team shares one calm colour. */
+.cme { --pc: var(--accent); }
+.cteam { --pc: #6f8f86; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .cteam { --pc: #8fb0a6; } }
+:root[data-theme="dark"] .cteam { --pc: #8fb0a6; }
+.tt-legend { align-items: center; gap: 14px; }
+.tt-legend .who { font-size: .85rem; font-weight: 600; }
+.tt-mine { margin-inline-start: auto; font-size: .85rem; }
+.tt-type { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; padding: 1px 6px; border-radius: 99px;
+  background: color-mix(in srgb, var(--pc) 22%, transparent); }
+.tt-chip.mine .tt-type, .tt-bar .tt-type { background: rgba(255,255,255,.25); }
+.tt-chip { flex-wrap: wrap; }
+.st-row { display: grid; grid-template-columns: 1fr auto auto auto auto; gap: 6px; align-items: center; margin-bottom: 8px; }
+.st-row .input[type="time"] { width: 9em; }
+.st-pick .row-gap { display: flex; flex-wrap: wrap; gap: 6px; }
+.chipbtn { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 6px 12px; cursor: pointer; font-size: .85rem;
+  transition: background var(--dur-quick), border-color var(--dur-quick), transform var(--dur-instant); }
+.chipbtn:active { transform: scale(.96); }
+.chipbtn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+@media (max-width: 520px) { .st-row { grid-template-columns: 1fr 1fr; } .st-row [name=name] { grid-column: 1 / -1; } .st-row span { display: none; } }

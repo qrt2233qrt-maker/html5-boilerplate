@@ -5,6 +5,12 @@ import { badRequest } from './errors.js';
 export const DEFAULT_SETTINGS = {
   auth: { requirePhoneVerification: false },
   scheduling: { maxWeeklyHours: 48, maxShiftHours: 12, minRestHours: 8 },
+  // Opening hours and the usual shifts (owner and managers can change them).
+  // A closing time at or before the opening time means past midnight.
+  hours: {
+    opensAt: '04:00', closesAt: '02:00',
+    shiftTypes: [{ key: 'morning', name: '', start: '04:00', end: '15:00' }, { key: 'night', name: '', start: '15:00', end: '02:00' }],
+  },
   payroll: { frequency: 'monthly', weekStartsOn: 6, overtimeWeeklyHours: 48, overtimeMultiplier: 1.5 },
   approvals: { expenseOwnerOver: 250000 },
   // Clock in/out only by scanning the door QR once a location has its

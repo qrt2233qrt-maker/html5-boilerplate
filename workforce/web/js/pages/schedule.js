@@ -8,6 +8,7 @@ import { addDays, dayLabel, hours, isoToZoned, shiftRange, time, todayLocal, wee
 import { empty, formSheet, statusPill } from '../components.js';
 import { busy, confirmDialog, openSheet, skeletonRows, toast, toastError } from '../ui.js';
 import { $, $$, html, initials, mount } from '../util.js';
+import { hoursSheet, shiftTypes, typeName } from '../hours.js';
 
 // Human text for schedule-rule problems returned by the server.
 export function problemText(err) {
@@ -48,13 +49,15 @@ async function teamWeek(view, query) {
         <button class="btn small ghost" type="button" data-w="0">${t('thisWeek')}</button></div>
       <select class="input" id="dept" aria-label="${t('department')}"><option value="">${t('allDepartments')}</option></select>
       <span class="spacer"></span>
-      ${canEdit ? html`<button class="btn small" type="button" id="copy">${ICON.repeat}${t('copyLastWeek')}</button>
+      ${canEdit ? html`<button class="btn small" type="button" id="hours">${ICON.clock}${t('hoursAndShifts')}</button>
+        <button class="btn small" type="button" id="copy">${ICON.repeat}${t('copyLastWeek')}</button>
         <button class="btn small primary" type="button" id="publish">${t('publishWeek')}</button>` : ''}
       <a class="btn small ghost" href="#/schedule?mine=1">${t('mySchedule')}</a>
     </div>
     <div id="grid">${skeletonRows(6)}</div>
     <p class="hint">${t('scheduleHint')}</p>`);
   $$('[data-w]', view).forEach((b) => { b.onclick = () => { st.week = b.dataset.w === '0' ? weekStartOf(todayLocal()) : addDays(st.week, Number(b.dataset.w)); teamWeek(view, query); }; });
+  $('#hours', view)?.addEventListener('click', () => hoursSheet(() => teamWeek(view, query)));
 
   let members = [];
   let cursor = null;
@@ -130,9 +133,10 @@ async function teamWeek(view, query) {
 }
 
 function editShift(view, query, s, preset, refs) {
-  const start = s ? isoToZoned(s.startsAt) : { day: preset.day, time: '09:00' };
-  const end = s ? isoToZoned(s.endsAt) : { day: preset.day, time: '17:00' };
-  formSheet({
+  const first = shiftTypes()[0];
+  const start = s ? isoToZoned(s.startsAt) : { day: preset.day, time: first?.start || '09:00' };
+  const end = s ? isoToZoned(s.endsAt) : { day: preset.day, time: first?.end || '17:00' };
+  const sheet = formSheet({
     title: s ? t('editShift') : t('addShift'),
     fields: [
       { name: 'membershipId', label: t('person'), type: 'select', value: s ? s.membershipId || '' : preset.membershipId, blank: t('openShift'), options: refs.people.map((m) => [m.membershipId, m.name]) },
@@ -164,6 +168,21 @@ function editShift(view, query, s, preset, refs) {
       teamWeek(view, query);
     },
   });
+  // Quick pick: the usual shifts fill in the times.
+  const types = shiftTypes();
+  const startEl = sheet.querySelector('[name=start]');
+  if (types.length && startEl) {
+    const endEl = sheet.querySelector('[name=end]');
+    const box = document.createElement('div');
+    box.className = 'field full st-pick';
+    const mark = () => box.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.s === startEl.value && b.dataset.e === endEl.value)));
+    mount(box, html`<span class="label">${t('shift')}</span><div class="row-gap">${types.map((x) => html`<button type="button" class="chipbtn" data-s="${x.start}" data-e="${x.end}">
+      <b>${typeName(x)}</b> <span class="num">${x.start}–${x.end}</span></button>`)}</div>`);
+    startEl.closest('.field').before(box);
+    box.querySelectorAll('button').forEach((b) => { b.onclick = () => { startEl.value = b.dataset.s; endEl.value = b.dataset.e; mark(); }; });
+    startEl.addEventListener('input', mark); endEl.addEventListener('input', mark);
+    mark();
+  }
 }
 
 async function shiftSheet(view, query, s, refs) {

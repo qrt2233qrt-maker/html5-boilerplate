@@ -302,3 +302,26 @@ export async function applyRestaurant(app, req) {
     return { kind: 'restaurant', ...added };
   });
 }
+
+// ---------- opening hours and shift types ----------
+// Changed by anyone who manages the schedule, not only the owner.
+export async function saveHours(app, req, { opensAt, closesAt, shiftTypes }) {
+  return transaction(app.db, async (db) => {
+    const { rows: [b] } = await db.query('SELECT settings FROM businesses WHERE id = $1 FOR UPDATE', [req.member.businessId]);
+    const before = settingsOf({ settings: b.settings }).hours;
+    const keys = new Set();
+    const types = shiftTypes.map((s, i) => {
+      if (s.start === s.end) throw badRequest('invalid_shift_type', 'A shift can\'t start and end at the same time.');
+      let key = (s.key || '').replace(/[^a-z0-9_]/g, '') || `shift${i + 1}`;
+      while (keys.has(key)) key = `${key}_${i}`;
+      keys.add(key);
+      return { key, name: (s.name || '').trim(), start: s.start, end: s.end };
+    });
+    const hours = { opensAt, closesAt, shiftTypes: types };
+    await db.query('UPDATE businesses SET settings = jsonb_set(coalesce(settings, \'{}\'::jsonb), \'{hours}\', $2::jsonb), updated_at = now() WHERE id = $1',
+      [req.member.businessId, JSON.stringify(hours)]);
+    await auditB(db, req, { action: 'schedule.hours_updated', targetType: 'business', targetId: req.member.businessId, before, after: hours });
+    req._business = null;
+    return hours;
+  });
+}

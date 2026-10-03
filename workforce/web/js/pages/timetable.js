@@ -9,6 +9,7 @@ import { empty, formSheet } from '../components.js';
 import { closeSheet, openSheet, skeletonRows, toast } from '../ui.js';
 import { $, $$, LS, html, initials, mount } from '../util.js';
 import { problemText } from './schedule.js';
+import { openWindow, typeName, typeOf } from '../hours.js';
 
 const VIEWS = ['day', 'week', 'month'];
 const st = { view: null, day: null, dept: '', focus: null };
@@ -46,7 +47,7 @@ function title(from, to) {
 }
 
 export const timetablePage = {
-  title: () => t('teamTimetable'),
+  title: () => t('timetableShort'),
   async render(view, { query }) {
     await loadSettings();
     const saved = LS.get('tt-view');
@@ -79,14 +80,15 @@ async function draw(view) {
 
   const data = await api.get(bpath(`/timetable?from=${from}&to=${to}${st.dept ? `&departmentId=${st.dept}` : ''}`));
   if (!view.isConnected) return;
+  // Simple colours: you stand out, everyone else shares one colour.
+  for (const p of data.people) p.color = p.membershipId === data.me ? 'me' : 'team';
   const person = new Map(data.people.map((p) => [p.membershipId, p]));
   // Unassigned shifts anyone could pick up.
   person.set(null, { membershipId: null, name: t('openShift'), color: 'open', departmentName: '' });
-  const shown = data.people.filter((p) => data.shifts.some((s) => s.membershipId === p.membershipId));
-  // Legend: tap someone to pick out their days; tap again to show everyone.
-  mount($('#tt-legend', view), html`${shown.map((p) => html`<button type="button" class="who-chip c${p.color} ${st.focus === p.membershipId ? 'on' : ''}" data-focus="${p.membershipId}" aria-pressed="${st.focus === p.membershipId}">
-    <i class="dot"></i>${p.membershipId === data.me ? t('you') : p.name.split(' ')[0]}</button>`)}`);
-  $$('[data-focus]', view).forEach((b) => { b.onclick = () => { st.focus = st.focus === b.dataset.focus ? null : b.dataset.focus; draw(view); }; });
+  const mineOnly = st.focus === data.me;
+  mount($('#tt-legend', view), html`<span class="who cme"><i class="dot"></i>${t('you')}</span><span class="who cteam"><i class="dot"></i>${t('team')}</span>
+    <label class="check-row tt-mine"><input type="checkbox" id="tt-mine" ${mineOnly ? 'checked' : ''}> <span>${t('onlyMyShifts')}</span></label>`);
+  $('#tt-mine', view).onchange = (e) => { st.focus = e.target.checked ? data.me : null; draw(view); };
 
   const body = $('#tt-body', view);
   if (!data.shifts.length) { mount(body, empty(t('ttEmpty'), t('ttEmptyBody'))); return; }
@@ -102,11 +104,12 @@ async function draw(view) {
 
 const dayOf = (iso) => isoToZoned(iso).day;
 const chipLabel = (s) => `${time(s.startsAt)}–${time(s.endsAt)}`;
+const typeTag = (s) => { const x = typeOf(s); return x ? html`<span class="tt-type">${typeName(x)}</span>` : ''; };
 
 function shiftChip(s, p, me, { withName = true } = {}) {
   return html`<button type="button" class="tt-chip c${p?.color ?? 0} ${s.membershipId === me ? 'mine' : ''}" data-shift="${s.id}" data-who="${s.membershipId}"
       aria-label="${p?.name ?? ''} ${shiftRange(s)}">
-    ${withName ? html`<b>${s.membershipId === me ? t('you') : s.membershipId ? (p?.name ?? '').split(' ')[0] : p.name}</b>` : ''}<span class="num">${chipLabel(s)}</span>
+    ${withName ? html`<b>${s.membershipId === me ? t('you') : s.membershipId ? (p?.name ?? '').split(' ')[0] : p.name}</b>` : ''}${typeTag(s)}<span class="num">${chipLabel(s)}</span>
     ${s.swapPending ? html`<span class="tt-badge" title="${t('swapWaiting')}">${ICON.swap}</span>` : ''}</button>`;
 }
 
@@ -142,8 +145,10 @@ function dayView(body, { data, person }) {
   const list = data.shifts.filter((s) => dayOf(s.startsAt) === st.day);
   if (!list.length) { mount(body, empty(t('nobodyWorking'))); return; }
   const mins = (iso) => { const z = isoToZoned(iso); const [h, m] = z.time.split(':').map(Number); return (z.day === st.day ? 0 : 1440) + h * 60 + m; };
-  const start = Math.max(0, Math.floor(Math.min(...list.map((s) => mins(s.startsAt))) / 60) * 60);
-  const end = Math.min(48 * 60, Math.ceil(Math.max(...list.map((s) => mins(s.endsAt))) / 60) * 60);
+  // The opening hours (4am–2am by default), widened if a shift goes beyond.
+  const [open, close] = openWindow();
+  const start = Math.max(0, Math.floor(Math.min(open, ...list.map((s) => mins(s.startsAt))) / 60) * 60);
+  const end = Math.min(48 * 60, Math.ceil(Math.max(close, ...list.map((s) => mins(s.endsAt))) / 60) * 60);
   const span = Math.max(60, end - start);
   const hoursMarks = [];
   for (let m = start; m <= end; m += span > 12 * 60 ? 180 : 120) hoursMarks.push(m);
@@ -155,7 +160,7 @@ function dayView(body, { data, person }) {
       return html`<div class="tt-lane"><span class="who c${p?.color ?? 0}"><i class="dot"></i><b>${id === data.me ? t('you') : p?.name}</b></span>
         <div class="tt-track" dir="ltr">${list.filter((s) => s.membershipId === id).map((s) => html`<button type="button" class="tt-bar c${p?.color ?? 0} ${id === data.me ? 'mine' : ''}"
             data-shift="${s.id}" data-who="${id}" data-l="${((mins(s.startsAt) - start) / span) * 100}" data-w="${((mins(s.endsAt) - mins(s.startsAt)) / span) * 100}"
-            aria-label="${p?.name} ${shiftRange(s)}"><span class="num">${chipLabel(s)}</span></button>`)}</div></div>`;
+            aria-label="${p?.name} ${shiftRange(s)}">${typeTag(s)}<span class="num">${chipLabel(s)}</span></button>`)}</div></div>`;
     })}</section>`);
   // Positions go through CSSOM: inline style attributes are blocked by the CSP.
   $$('.tt-bar', body).forEach((b) => { b.style.setProperty('--l', `${b.dataset.l}%`); b.style.setProperty('--w', `${b.dataset.w}%`); });

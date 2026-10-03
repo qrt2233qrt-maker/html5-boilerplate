@@ -58,7 +58,7 @@ async function employeeHome(view, body) {
     <div class="cols"><div>
       ${todayPanel(week)}
       <section class="panel">
-        <div class="panel-head"><h2>${t('thisWeek')}</h2><a class="btn small ghost" href="#/schedule">${t('seeAll')}</a></div>
+        <div class="panel-head"><h2>${t('thisWeek')}</h2><a class="btn small ghost" href="#/timetable">${t('seeAll')}</a></div>
         <div class="mini-stats">
           <div><small>${t('scheduled')}</small><b class="num">${hours(week.scheduledHours)}</b></div>
           <div><small>${t('worked')}</small><b class="num">${hours(week.workedHours)}</b></div>
@@ -87,8 +87,7 @@ async function employeeHome(view, body) {
     </div></div>
     <h2 class="h2">${t('quickActions')}</h2>
     <div class="tiles">
-      ${tile('/schedule', ICON.calendar, t('mySchedule'))}
-      ${tile('/timetable', ICON.people, t('teamTimetable'))}
+      ${tile('/timetable', ICON.calendar, t('timetableShort'))}
       ${can('self.requests') ? tile('/requests?new=change', ICON.clock, t('requestChange')) : ''}
       ${can('self.swaps') ? tile('/requests?new=swap', ICON.swap, t('swapShift')) : ''}
       ${can('self.pay') ? tile('/pay', ICON.wallet, t('myPay')) : ''}
@@ -181,7 +180,7 @@ async function managerHome(view, body) {
       ${can('attendance.view') ? tile('/attendance', ICON.clock, t('attendance')) : ''}
       ${can('members.view') ? tile('/team', ICON.people, t('team')) : ''}
       ${can('analytics.view') ? tile('/analytics', ICON.chart, t('analytics')) : ''}
-      ${tile('/timetable', ICON.people, t('teamTimetable'))}
+      ${tile('/timetable', ICON.calendar, t('timetableShort'))}
       ${tile('/requests', ICON.swap, t('myRequests'))}
       ${can('self.pay') ? tile('/pay', ICON.wallet, t('myPay')) : ''}
       ${can('self.expenses') ? tile('/expenses?new=1', ICON.receipt, t('addExpense')) : ''}
