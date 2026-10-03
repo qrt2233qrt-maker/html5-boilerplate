@@ -5,7 +5,7 @@ import { LANG, t } from './i18n.js';
 import { ICON } from './icons.js';
 import { S, bpath, can } from './state.js';
 import { time } from './fmt.js';
-import { busy, errorMessage, openSheet, closeSheet, toast } from './ui.js';
+import { errorMessage, openSheet, closeSheet } from './ui.js';
 import { $, html, mount, raw } from './util.js';
 
 // One reading of the phone's position. Location is only read here, at the
@@ -21,9 +21,10 @@ export function position() {
   });
 }
 
-// Clock in (or out) at the door: reads the position, then sends it with the code.
-export async function zoneClock({ out = false, locationId, code, breakMinutes = 0 }) {
-  const where = { locationId, code, ...(await position()) };
+// Clock in (or out) at the door: reads the position (when the business
+// checks it), then sends it with the code from the QR.
+export async function zoneClock({ out = false, locationId, code, breakMinutes = 0, checkLocation = true }) {
+  const where = { locationId, code, ...(checkLocation ? await position() : {}) };
   return out
     ? api.post(bpath('/attendance/clock-out'), { breakMinutes, ...where })
     : api.post(bpath('/attendance/clock-in'), where);
@@ -31,48 +32,153 @@ export async function zoneClock({ out = false, locationId, code, breakMinutes = 
 
 // Friendly text for location problems as well as the server's refusals.
 export function clockError(err) {
-  if (err?.code?.startsWith?.('geo_')) return t(`e.${err.code}`);
+  if (err?.code?.startsWith?.('geo_') || err?.code?.startsWith?.('cam_')) return t(`e.${err.code}`);
   if (err?.code === 'outside_zone' && err.details) return t('e.outside_zone_far', { m: err.details.distance, place: err.details.location });
   return errorMessage(err);
 }
 
-// The sheet behind the Clock in / Clock out buttons when the door is required:
-// scan the QR with the camera, or type the code shown under it.
-export async function zoneSheet({ out, onDone }) {
-  const locs = (await api.get(bpath('/locations'))).filter((l) => !l.archivedAt && l.latitude !== null);
+// The location id and code inside a door QR (a link to #/clock?l=…&c=…).
+export function readDoorQr(text) {
+  try {
+    const u = new URL(text);
+    const q = new URLSearchParams(u.hash.split('?')[1] || '');
+    if (!u.hash.startsWith('#/clock') || !q.get('l') || !q.get('c')) return null;
+    return { locationId: q.get('l'), code: q.get('c') };
+  } catch { return null; }
+}
+
+// ---------- camera scanner ----------
+
+let jsqrLoading = null;
+function loadJsQr() {
+  if (window.jsQR) return Promise.resolve(window.jsQR);
+  jsqrLoading ||= new Promise((resolve, reject) => {
+    const sc = document.createElement('script');
+    sc.src = '/vendor/jsQR.js';
+    sc.onload = () => resolve(window.jsQR);
+    sc.onerror = () => { jsqrLoading = null; reject(new Error('decoder')); };
+    document.head.append(sc);
+  });
+  return jsqrLoading;
+}
+
+// Starts the back camera in `video` and calls onCode(text) for each QR seen.
+// Returns stop().
+async function startScanner(video, onCode) {
+  if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error('no camera'), { code: 'cam_unavailable' });
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+  } catch (e) {
+    throw Object.assign(new Error(e.message), { code: e.name === 'NotAllowedError' ? 'cam_denied' : 'cam_unavailable' });
+  }
+  video.srcObject = stream;
+  video.setAttribute('playsinline', '');
+  video.muted = true;
+  await video.play().catch(() => {});
+  let stopped = false;
+  const stop = () => { stopped = true; stream.getTracks().forEach((tr) => tr.stop()); };
+  let detect;
+  if ('BarcodeDetector' in window) {
+    try {
+      const bd = new window.BarcodeDetector({ formats: ['qr_code'] });
+      detect = async () => (await bd.detect(video))[0]?.rawValue || null;
+    } catch { detect = null; }
+  }
+  if (!detect) {
+    const jsQR = await loadJsQr();
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    detect = async () => {
+      const w = video.videoWidth; const h = video.videoHeight;
+      if (!w || !h) return null;
+      const scale = Math.min(1, 640 / Math.max(w, h));
+      canvas.width = Math.round(w * scale); canvas.height = Math.round(h * scale);
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      return jsQR(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height, { inversionAttempts: 'dontInvert' })?.data || null;
+    };
+  }
+  const tick = async () => {
+    if (stopped || !video.isConnected) { if (!stopped) stop(); return; }
+    try {
+      const text = video.readyState >= 2 ? await detect() : null;
+      if (text && onCode(text) === true) return;
+    } catch { /* keep looking */ }
+    setTimeout(tick, 180);
+  };
+  tick();
+  return stop;
+}
+
+// A short celebration when someone clocks in or out.
+export function celebrate(host, { out, at }) {
+  mount(host, html`<div class="clock-done ${out ? 'out' : 'in'}" role="status">
+    <div class="burst" aria-hidden="true">${[...Array(12)].map((_, i) => html`<i class="b${i}"></i>`)}</div>
+    <span class="big-tick">${ICON.check}</span>
+    <h2>${out ? t('clockedOut') : t('clockedIn')}</h2>
+    <p class="num">${time(at)} · ${S.business.name}</p>
+    <p class="muted">${out ? t('byeMessage') : t('helloMessage', { name: S.me.user.name.split(' ')[0] })}</p></div>`);
+  navigator.vibrate?.(out ? [30, 60, 30] : 40);
+}
+
+// The sheet behind the Clock in / Clock out buttons when the door is
+// required: scan the QR at the door with the camera.
+export async function zoneSheet({ out, onDone, clock }) {
+  const cfg = clock || (await api.get(bpath('/me/week'))).clock || { checkLocation: true, typedCode: false };
   const sheet = openSheet({
     title: out ? t('clockOut') : t('clockIn'),
-    body: html`<div class="scan-hint"><span class="ic">${ICON.cam || ICON.clock}</span>
-        <p>${t('scanDoorHint')}</p></div>
-      <form id="zone-form" novalidate><div class="form-error" role="alert"></div>
-        ${locs.length > 1 ? html`<div class="field"><label class="label" for="z-loc">${t('location')}</label>
-          <select class="input" id="z-loc">${locs.map((l) => html`<option value="${l.id}">${l.name}</option>`)}</select></div>` : ''}
-        <div class="field"><label class="label" for="z-code">${t('doorCode')}</label>
-          <input class="input code-input" id="z-code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" dir="ltr" placeholder="••••••"></div>
-        ${out ? html`<div class="field"><label class="label" for="z-brk">${t('breakMinutes')}</label>
-          <input class="input" id="z-brk" type="number" min="0" max="600" value="0" inputmode="numeric"></div>` : ''}
-        <p class="hint">${t('locationPrivacy')}</p></form>`,
-    foot: html`<button class="btn primary" type="submit" form="zone-form">${out ? t('clockOut') : t('clockIn')}</button>`,
+    body: html`${out ? html`<div class="field"><label class="label" for="z-brk">${t('breakMinutes')}</label>
+        <input class="input" id="z-brk" type="number" min="0" max="600" value="0" inputmode="numeric"></div>` : ''}
+      <div class="scanner" id="scanner"><video id="z-video" aria-label="${t('cameraView')}"></video><span class="scan-frame" aria-hidden="true"><i></i></span>
+        <p class="scan-msg" id="z-msg" role="status">${t('pointAtQr')}</p></div>
+      <div class="form-error" role="alert" id="z-err"></div>
+      ${cfg.typedCode ? html`<form id="zone-form" novalidate class="typed-code"><label class="label" for="z-code">${t('orTypeCode')}</label>
+        <div class="row-gap"><input class="input code-input" id="z-code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" dir="ltr" placeholder="••••••">
+        <button class="btn" type="submit">${t('continue')}</button></div></form>` : ''}
+      <p class="hint">${cfg.checkLocation ? t('locationPrivacy') : t('scanOnlyHint')}</p>`,
   });
-  const form = $('#zone-form', sheet);
-  form.onsubmit = async (e) => {
-    e.preventDefault();
-    const btn = $('.sfoot .primary', sheet);
-    const fe = $('.form-error', form);
-    fe.textContent = '';
-    const locationId = $('#z-loc', form)?.value || locs[0]?.id;
-    busy(btn);
+  const err = $('#z-err', sheet);
+  const msg = $('#z-msg', sheet);
+  let busyNow = false;
+  let stop = () => {};
+  const go = async ({ locationId, code }) => {
+    if (busyNow) return;
+    busyNow = true;
+    err.textContent = '';
+    msg.textContent = cfg.checkLocation ? t('findingLocation') : t('checking');
+    $('#scanner', sheet).classList.add('got');
     try {
-      await zoneClock({ out, locationId, code: $('#z-code', form).value, breakMinutes: Number($('#z-brk', form)?.value || 0) });
-      closeSheet();
-      toast(out ? t('clockedOut') : t('clockedIn'));
-      onDone?.();
-    } catch (err) {
-      busy(btn, false);
-      fe.textContent = clockError(err);
+      const r = await zoneClock({ out, locationId, code, checkLocation: cfg.checkLocation, breakMinutes: Number($('#z-brk', sheet)?.value || 0) });
+      stop();
+      celebrate($('.sbody', sheet) || sheet, { out, at: out ? r.clockOut : r.clockIn });
+      setTimeout(() => { closeSheet(); onDone?.(); }, 1900);
+    } catch (e) {
+      busyNow = false;
+      $('#scanner', sheet).classList.remove('got');
+      msg.textContent = t('pointAtQr');
+      err.textContent = clockError(e);
     }
   };
-  $('#z-code', form).focus();
+  $('#zone-form', sheet)?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const locs = (await api.get(bpath('/locations'))).filter((l) => !l.archivedAt && l.latitude !== null);
+    go({ locationId: locs[0]?.id, code: $('#z-code', sheet).value });
+  });
+  try {
+    stop = await startScanner($('#z-video', sheet), (text) => {
+      const qr = readDoorQr(text);
+      if (!qr) { msg.textContent = t('notDoorQr'); return false; }
+      go(qr);
+      return false;
+    });
+  } catch (e) {
+    $('#scanner', sheet).classList.add('off');
+    msg.textContent = '';
+    err.textContent = clockError(e);
+  }
+  // Stop the camera when the sheet closes.
+  const video = $('#z-video', sheet);
+  const watch = setInterval(() => { if (!video.isConnected || !sheet.open) { stop(); clearInterval(watch); } }, 400);
 }
 
 // Opened by scanning the door QR: clocks in straight away, or offers clock-out.
@@ -83,20 +189,19 @@ export const clockPage = {
     const code = query.get('c');
     const week = await api.get(bpath('/me/week'));
     const out = !!week.clockedIn;
+    const checkLocation = week.clock?.checkLocation !== false;
     const card = (body) => mount(view, html`<section class="panel clock-scan">${body}</section>`);
     const run = async (breakMinutes = 0) => {
-      card(html`<div class="scan-state"><span class="spinner" aria-hidden="true"></span><p>${t('findingLocation')}</p></div>`);
+      card(html`<div class="scan-state"><span class="spinner" aria-hidden="true"></span><p>${checkLocation ? t('findingLocation') : t('checking')}</p></div>`);
       try {
-        const r = await zoneClock({ out, locationId, code, breakMinutes });
-        card(html`<div class="scan-state ok"><span class="big-tick">${ICON.check}</span>
-          <h2>${out ? t('clockedOut') : t('clockedIn')}</h2>
-          <p class="num">${time(out ? r.clockOut : r.clockIn)} · ${S.business.name}</p>
-          <a class="btn primary" href="#/home">${t('home')}</a></div>`);
+        const r = await zoneClock({ out, locationId, code, breakMinutes, checkLocation });
+        card(html`<div id="done"></div><a class="btn primary block" href="#/home">${t('home')}</a>`);
+        celebrate($('#done', view), { out, at: out ? r.clockOut : r.clockIn });
       } catch (err) {
         card(html`<div class="scan-state bad"><span class="big-x" aria-hidden="true">!</span>
           <h2>${out ? t('couldNotClockOut') : t('couldNotClockIn')}</h2><p>${clockError(err)}</p>
           ${err.code === 'invalid_door_code' ? html`<p class="hint">${t('scanAgainHint')}</p>` : html`<button class="btn primary" type="button" id="again">${t('tryAgain')}</button>`}
-          <p class="hint">${t('locationPrivacy')}</p></div>`);
+          ${checkLocation ? html`<p class="hint">${t('locationPrivacy')}</p>` : ''}</div>`);
         $('#again', view)?.addEventListener('click', () => run(breakMinutes));
       }
     };

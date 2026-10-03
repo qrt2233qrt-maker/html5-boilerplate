@@ -6,6 +6,8 @@ import fastifyStatic from '@fastify/static';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { createPool } from './db/pool.js';
 import { AppError, tooMany } from './lib/errors.js';
 import { sessionPlugin } from './auth/session.js';
@@ -107,6 +109,9 @@ export async function buildApp(config, options = {}) {
     return reply.sendFile('index.html');
   });
   await app.register(fastifyStatic, { root: webRoot, index: 'index.html', cacheControl: true, maxAge: 0 });
+  // QR decoder for the in-app door scanner (phones without BarcodeDetector).
+  const jsqr = await readFile(createRequire(import.meta.url).resolve('jsqr/dist/jsQR.js'));
+  app.get('/vendor/jsQR.js', async (req, reply) => reply.type('text/javascript; charset=utf-8').header('cache-control', 'public, max-age=86400').send(jsqr));
 
   app.addHook('onClose', async () => {
     if (!options.pool) await app.db.end();

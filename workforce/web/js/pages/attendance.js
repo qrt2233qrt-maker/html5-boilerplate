@@ -77,7 +77,7 @@ function drawClock(view, week, reload) {
     ${c && !week.zoneRequired ? html`<input class="input brk" type="number" min="0" max="600" id="brk" placeholder="${t('breakMinutes')}" aria-label="${t('breakMinutes')}">` : ''}
     <button class="btn ${c ? '' : 'primary'}" type="button" id="clockbtn">${c ? t('clockOut') : t('clockIn')}</button></div>`);
   $('#clockbtn', view).onclick = async (e) => {
-    if (week.zoneRequired) return zoneSheet({ out: !!c, onDone: reload });
+    if (week.zoneRequired) return zoneSheet({ out: !!c, clock: week.clock, onDone: reload });
     // Keep the button: the event's currentTarget is cleared once we await.
     const btn = e.currentTarget;
     busy(btn);

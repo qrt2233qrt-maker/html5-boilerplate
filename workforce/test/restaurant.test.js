@@ -116,6 +116,20 @@ describe('clock-in zone (PizzaRita)', function () {
     await owner.put(B('/settings'), { settings: { attendance: { requireZone: false } } });
     assert.equal((await cook.member.post(B('/attendance/clock-in'))).status, 200);
   });
+
+  it('can rely on the QR alone, without checking the phone\'s location', async () => {
+    const { owner, cook, B } = await restaurant(t);
+    const loc = (await owner.post(B('/locations'), { name: 'PizzaRita', latitude: SHOP.lat, longitude: SHOP.lng })).body;
+    await owner.put(B('/settings'), { settings: { attendance: { checkLocation: false } } });
+    const week = (await cook.member.get(B('/me/week'))).body;
+    assert.equal(week.zoneRequired, true);
+    assert.deepEqual(week.clock, { checkLocation: false, typedCode: false });
+    // Still needs the current code from the door…
+    assert.equal((await cook.member.post(B('/attendance/clock-in'), { locationId: loc.id, code: '000000' })).body.error.code, 'invalid_door_code');
+    // …but no position.
+    const r = await cook.member.post(B('/attendance/clock-in'), { locationId: loc.id, code: await codeNow(t, loc.id) });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+  });
 });
 
 // ---------- drivers per trip, and pay frequency per person ----------

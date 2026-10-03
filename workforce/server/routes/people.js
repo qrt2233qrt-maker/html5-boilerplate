@@ -26,7 +26,7 @@ export default async function peopleRoutes(app) {
             scheduling: obj({ maxWeeklyHours: int(1, 168), maxShiftHours: int(1, 24), minRestHours: int(0, 24) }),
             payroll: obj({ frequency: oneOf('daily', 'weekly', 'biweekly', 'monthly'), weekStartsOn: int(0, 6), overtimeWeeklyHours: int(1, 168), overtimeMultiplier: { type: 'number', minimum: 1, maximum: 3 } }),
             approvals: obj({ expenseOwnerOver: int(0, 1e15) }),
-            attendance: obj({ requireZone: bool }),
+            attendance: obj({ requireZone: bool, checkLocation: bool, typedCode: bool }),
             alerts: obj({ payrollIncreasePct: int(1, 1000), categoryIncreasePct: int(1, 1000), revenueDropPct: int(1, 100), overtimeIncreasePct: int(1, 1000), marginBelowPct: int(-100, 100), largeExpense: int(1, 1e15) }),
           },
         },

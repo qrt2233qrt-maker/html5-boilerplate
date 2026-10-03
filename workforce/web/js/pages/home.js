@@ -52,20 +52,11 @@ async function employeeHome(view, body) {
   const chip = $('#hero-chip', view);
   chip.textContent = `${hours(week.scheduledHours)} · ${t('thisWeek')}`;
   chip.hidden = false;
-  const todayShift = week.today[0];
-  const clocked = week.clockedIn;
   const pendingClaims = claims.filter((c) => ['submitted', 'under_review'].includes(c.status)).length;
   const current = pay?.current;
   mount(body, html`
     <div class="cols"><div>
-      <section class="panel today">
-        <div class="panel-head"><h2>${t('today')}</h2>${clocked ? html`<span class="pill ok">● ${t('clockedInSince', { time: time(clocked.since) })}</span>` : ''}</div>
-        ${todayShift ? html`<div class="shift-big"><span class="ic">${ICON.clock}</span><div>
-            <b class="num">${time(todayShift.startsAt)} – ${time(todayShift.endsAt)}</b>
-            <span class="muted">${[todayShift.departmentName, todayShift.locationName, todayShift.breakMinutes ? t('breakMin', { n: todayShift.breakMinutes }) : null].filter(Boolean).join(' · ')}</span>
-          </div></div>` : html`<p class="muted">${t('noShiftToday')}</p>`}
-        <button class="btn ${clocked ? '' : 'primary'} block" type="button" id="clock">${ICON.clock}${clocked ? t('clockOut') : t('clockIn')}</button>
-      </section>
+      ${todayPanel(week)}
       <section class="panel">
         <div class="panel-head"><h2>${t('thisWeek')}</h2><a class="btn small ghost" href="#/schedule">${t('seeAll')}</a></div>
         <div class="mini-stats">
@@ -97,6 +88,7 @@ async function employeeHome(view, body) {
     <h2 class="h2">${t('quickActions')}</h2>
     <div class="tiles">
       ${tile('/schedule', ICON.calendar, t('mySchedule'))}
+      ${tile('/timetable', ICON.people, t('teamTimetable'))}
       ${can('self.requests') ? tile('/requests?new=change', ICON.clock, t('requestChange')) : ''}
       ${can('self.swaps') ? tile('/requests?new=swap', ICON.swap, t('swapShift')) : ''}
       ${can('self.pay') ? tile('/pay', ICON.wallet, t('myPay')) : ''}
@@ -104,9 +96,28 @@ async function employeeHome(view, body) {
       ${tile('/notifications', ICON.bell, t('notifications'))}
       ${tile('/account', ICON.user, t('profile'))}
     </div>`);
+  wireClock(view, body, week);
+}
+
+// Today's shift and the clock button: the same for employees and managers.
+function todayPanel(week) {
+  const todayShift = week.today[0];
+  const clocked = week.clockedIn;
+  return html`<section class="panel today">
+    <div class="panel-head"><h2>${t('myDay')}</h2>${clocked ? html`<span class="pill ok live">● ${t('clockedInSince', { time: time(clocked.since) })}</span>` : ''}</div>
+    ${todayShift ? html`<div class="shift-big"><span class="ic">${ICON.clock}</span><div>
+        <b class="num">${time(todayShift.startsAt)} – ${time(todayShift.endsAt)}</b>
+        <span class="muted">${[todayShift.departmentName, todayShift.locationName, todayShift.breakMinutes ? t('breakMin', { n: todayShift.breakMinutes }) : null].filter(Boolean).join(' · ')}</span>
+      </div></div>` : html`<p class="muted">${t('noShiftToday')}</p>`}
+    <button class="btn ${clocked ? '' : 'primary'} block clock-btn" type="button" id="clock">${week.zoneRequired ? ICON.qr : ICON.clock}${clocked ? t('clockOut') : t('clockIn')}</button>
+  </section>`;
+}
+
+function wireClock(view, body, week) {
+  const clocked = week.clockedIn;
   $('#clock', body).onclick = async (e) => {
-    // At the restaurant the door code and the phone's position are needed.
-    if (week.zoneRequired) return zoneSheet({ out: !!clocked, onDone: () => homePage.render(view) });
+    // At the restaurant: scan the QR code at the door.
+    if (week.zoneRequired) return zoneSheet({ out: !!clocked, clock: week.clock, onDone: () => homePage.render(view) });
     // Keep the button: the event's currentTarget is cleared once we await.
     const btn = e.currentTarget;
     busy(btn);
@@ -125,7 +136,9 @@ async function employeeHome(view, body) {
 // ---------- manager ----------
 
 async function managerHome(view, body) {
-  const [today, requests, swaps, claims] = await Promise.all([
+  const [week, pay, today, requests, swaps, claims] = await Promise.all([
+    api.get(bpath('/me/week')),
+    can('self.pay') ? api.get(bpath('/me/pay')).catch(() => null) : null,
     api.get(bpath('/staffing/today')),
     can('shift_requests.approve') ? api.get(bpath('/shift-requests?status=pending')) : [],
     can('swaps.approve') ? api.get(bpath('/swaps?status=pending_approval')) : [],
@@ -138,6 +151,12 @@ async function managerHome(view, body) {
   chip.textContent = tn('workingNow', T.working);
   chip.hidden = false;
   mount(body, html`
+    <div class="cols"><div>${todayPanel(week)}</div><div>
+      ${pay?.current ? html`<a class="panel pay-card" href="#/pay"><small class="muted">${t('payThisPeriod')}</small>
+        <b class="big num">${money(pay.current.net)}</b>${statusPill(pay.current.status)}</a>` : ''}
+      ${week.swaps.waiting_on_me ? html`<a class="banner info" href="#/requests"><span>${tn('swapsWaitingOnYou', week.swaps.waiting_on_me)}</span><span class="chev">${ICON.chev}</span></a>` : ''}
+    </div></div>
+    <h2 class="h2">${t('yourTeamToday')}</h2>
     <div class="stat-row">
       ${[['scheduled', T.scheduled, ''], ['working', T.working, 'ok'], ['late', T.late, 'warn'], ['missed', T.missed, 'over'], ['open', T.open, '']].map(([k, n, cls]) =>
     html`<div class="stat ${cls}"><small>${t(`staff_${k}`)}</small><b class="num">${num(n, 0)}</b></div>`)}
@@ -162,8 +181,12 @@ async function managerHome(view, body) {
       ${can('attendance.view') ? tile('/attendance', ICON.clock, t('attendance')) : ''}
       ${can('members.view') ? tile('/team', ICON.people, t('team')) : ''}
       ${can('analytics.view') ? tile('/analytics', ICON.chart, t('analytics')) : ''}
+      ${tile('/timetable', ICON.people, t('teamTimetable'))}
       ${tile('/requests', ICON.swap, t('myRequests'))}
+      ${can('self.pay') ? tile('/pay', ICON.wallet, t('myPay')) : ''}
+      ${can('self.expenses') ? tile('/expenses?new=1', ICON.receipt, t('addExpense')) : ''}
     </div>`);
+  wireClock(view, body, week);
 }
 
 // ---------- owner ----------

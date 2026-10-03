@@ -44,7 +44,8 @@ async function checkZone(db, biz, { locationId, code, lat, lng, accuracy }) {
   if (!doorCodeValid(loc, biz.timezone, normalizeCode(code))) {
     throw badRequest('invalid_door_code', 'That code has changed. Scan the code at the door again.');
   }
-  if (loc.latitude === null) return { locationId: loc.id, lat: null, lng: null, accuracy: null, distance: null };
+  const noPosition = { locationId: loc.id, lat: null, lng: null, accuracy: null, distance: null };
+  if (loc.latitude === null || biz.settings.attendance.checkLocation === false) return noPosition;
   if (typeof lat !== 'number' || typeof lng !== 'number') throw badRequest('location_needed', 'Allow location for this app, then try again.');
   if (typeof accuracy === 'number' && accuracy > MAX_ACCURACY_M) {
     throw badRequest('location_inaccurate', 'Your phone can\'t tell precisely where you are. Turn on precise location and try again.', { accuracy: Math.round(accuracy) });

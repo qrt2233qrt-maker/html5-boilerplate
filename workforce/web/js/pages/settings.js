@@ -40,7 +40,7 @@ export const settingsPage = {
         ${card('sched', t('schedulingRules'), t('schedulingRulesBody'), kv([[t('maxWeeklyHours'), s.scheduling.maxWeeklyHours], [t('maxShiftHours'), s.scheduling.maxShiftHours], [t('minRestHours'), s.scheduling.minRestHours]]), editBtn('sched'))}
         ${card('pay', t('payrollSettings'), '', kv([[t('payFrequency'), t(`freq_${s.payroll.frequency}`)], [t('weekStartsOn'), dayName(s.payroll.weekStartsOn)], [t('overtimeAfter'), `${s.payroll.overtimeWeeklyHours} ${t('hoursShort')}`], [t('overtimeRate'), `×${s.payroll.overtimeMultiplier}`]]), editBtn('pay'))}
         ${card('appr', t('approvalRules'), t('approvalRulesBody'), kv([[t('ownerApprovalOver'), money(s.approvals.expenseOwnerOver)]]), editBtn('appr'))}
-        ${card('zone', t('clockZone'), t('clockZoneBody'), kv([[t('requireZone'), s.attendance.requireZone ? t('on') : t('off')], [t('locationsWithPosition'), String(locs.filter((l) => !l.archivedAt && l.latitude !== null).length)]]), editBtn('zone'))}
+        ${card('zone', t('clockZone'), t('clockZoneBody'), kv([[t('requireZone'), s.attendance.requireZone ? t('on') : t('off')], [t('checkLocation'), s.attendance.checkLocation !== false ? t('on') : t('off')], [t('typedCode'), s.attendance.typedCode ? t('on') : t('off')], [t('locationsWithPosition'), String(locs.filter((l) => !l.archivedAt && l.latitude !== null).length)]]), editBtn('zone'))}
         ${card('alerts', t('alertThresholds'), t('alertThresholdsBody'), kv([[t('alert_payroll'), `${s.alerts.payrollIncreasePct}%`], [t('alert_category'), `${s.alerts.categoryIncreasePct}%`], [t('alert_revenue'), `${s.alerts.revenueDropPct}%`], [t('alert_overtime'), `${s.alerts.overtimeIncreasePct}%`], [t('alert_margin'), `${s.alerts.marginBelowPct}%`], [t('alert_large'), money(s.alerts.largeExpense)]]), editBtn('alerts'))}
         ${can('security.manage') ? card('sec', t('authSettings'), t('authSettingsBody'), kv([[t('requirePhone'), s.auth.requirePhoneVerification ? t('on') : t('off')]]), html`<button class="btn small" type="button" data-edit="sec">${t('edit')}</button>`) : ''}
       </div><div>
@@ -87,7 +87,10 @@ export const settingsPage = {
         { name: 'overtimeWeeklyHours', label: t('overtimeAfter'), type: 'number', value: s.payroll.overtimeWeeklyHours },
         { name: 'overtimeMultiplier', label: t('overtimeRate'), type: 'text', value: s.payroll.overtimeMultiplier, attrs: 'inputmode="decimal"' },
       ], onSubmit: (v) => save({ settings: { payroll: { ...v, weekStartsOn: Number(v.weekStartsOn), overtimeMultiplier: Number(v.overtimeMultiplier) } } }) }),
-      zone: () => formSheet({ title: t('clockZone'), intro: t('clockZoneBody'), fields: [{ name: 'requireZone', label: t('requireZoneLong'), type: 'checkbox', value: s.attendance.requireZone }],
+      zone: () => formSheet({ title: t('clockZone'), intro: t('clockZoneBody'), fields: [
+        { name: 'requireZone', label: t('requireZoneLong'), type: 'checkbox', value: s.attendance.requireZone },
+        { name: 'checkLocation', label: t('checkLocationLong'), type: 'checkbox', value: s.attendance.checkLocation !== false },
+        { name: 'typedCode', label: t('typedCodeLong'), type: 'checkbox', value: !!s.attendance.typedCode }],
         onSubmit: (v) => save({ settings: { attendance: v } }) }),
       appr: () => formSheet({ title: t('approvalRules'), fields: [{ name: 'expenseOwnerOver', label: t('ownerApprovalOver'), type: 'money', value: s.approvals.expenseOwnerOver, required: true }],
         onSubmit: (v) => save({ settings: { approvals: v } }) }),

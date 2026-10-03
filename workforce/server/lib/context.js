@@ -7,8 +7,10 @@ export const DEFAULT_SETTINGS = {
   scheduling: { maxWeeklyHours: 48, maxShiftHours: 12, minRestHours: 8 },
   payroll: { frequency: 'monthly', weekStartsOn: 6, overtimeWeeklyHours: 48, overtimeMultiplier: 1.5 },
   approvals: { expenseOwnerOver: 250000 },
-  // Clock in/out only at the door (QR + GPS) once a location has its position.
-  attendance: { requireZone: true },
+  // Clock in/out only by scanning the door QR once a location has its
+  // position; checkLocation also checks the phone is inside the radius;
+  // typedCode lets people type the code under the QR instead of scanning.
+  attendance: { requireZone: true, checkLocation: true, typedCode: false },
   alerts: { payrollIncreasePct: 15, categoryIncreasePct: 25, revenueDropPct: 10, overtimeIncreasePct: 20, marginBelowPct: 10, largeExpense: 1000000 },
 };
 

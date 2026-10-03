@@ -340,6 +340,7 @@ export async function myWeek(app, req) {
     weekStart: w.ws,
     // Clocking in needs the door code and the phone's position.
     zoneRequired: await zoneRequired(db, biz),
+    clock: { checkLocation: biz.settings.attendance.checkLocation !== false, typedCode: !!biz.settings.attendance.typedCode },
     today: [...new Map(today.map((s) => [s.id, s])).values()],
     next: next ? shiftOut(next) : null,
     shifts: list,
@@ -386,5 +387,47 @@ export async function todayStaffing(app, req) {
   return {
     shifts: items,
     totals: { scheduled: items.filter((i) => i.membershipId).length, working: count('working'), late: count('late'), missed: count('missed'), open: count('open'), done: count('done') },
+  };
+}
+
+// ---------- team timetable ----------
+// Everyone at the business sees the published schedule of the whole team:
+// who works when, in which section. Only times, names and sections are
+// shown (no notes, pay or contact details). Each person keeps the same
+// colour everywhere, given in the order they joined.
+export async function timetable(app, req, { from, to, departmentId }) {
+  assertRange(from, to, 45);
+  const biz = await business(req);
+  const params = [req.member.businessId, from, to, biz.timezone];
+  let dept = '';
+  if (departmentId) { params.push(departmentId); dept = `AND s.department_id = $${params.length}`; }
+  const { rows: people } = await app.db.query(
+    `SELECT m.id, u.name, m.role, m.department_id, d.name AS department_name, m.profile->>'jobTitle' AS job_title,
+            (row_number() OVER (ORDER BY m.created_at, m.id) - 1)::int % 12 AS color, m.status
+       FROM memberships m JOIN users u ON u.id = m.user_id LEFT JOIN departments d ON d.id = m.department_id
+      WHERE m.business_id = $1`, [req.member.businessId]);
+  const { rows: shifts } = await app.db.query(
+    `SELECT s.id, s.membership_id, s.starts_at, s.ends_at, s.break_minutes, s.status, s.department_id,
+            d.name AS department_name, l.name AS location_name
+       FROM shifts s LEFT JOIN departments d ON d.id = s.department_id LEFT JOIN locations l ON l.id = s.location_id
+      WHERE s.business_id = $1 AND s.published AND s.status <> 'cancelled'
+        AND s.starts_at >= ($2::date)::timestamp AT TIME ZONE $4 AND s.starts_at < (($3::date) + 1)::timestamp AT TIME ZONE $4 ${dept}
+      ORDER BY s.starts_at`, params);
+  // Shifts already in a waiting swap can't be asked for again.
+  const { rows: busy } = await app.db.query(
+    `SELECT requester_shift_id AS a, target_shift_id AS b FROM shift_swaps
+      WHERE business_id = $1 AND status IN ('pending_peer', 'pending_approval')`, [req.member.businessId]);
+  const inSwap = new Set(busy.flatMap((x) => [x.a, x.b]));
+  const working = new Set(shifts.map((s) => s.membership_id));
+  return {
+    from, to, me: req.member.id,
+    people: people.filter((p) => p.status === 'active' || working.has(p.id)).map((p) => ({
+      membershipId: p.id, name: p.name, role: p.role, departmentId: p.department_id, departmentName: p.department_name,
+      jobTitle: p.job_title, color: p.color,
+    })).sort((a, b) => (a.membershipId === req.member.id ? -1 : b.membershipId === req.member.id ? 1 : a.name.localeCompare(b.name))),
+    shifts: shifts.map((s) => ({
+      id: s.id, membershipId: s.membership_id, startsAt: s.starts_at, endsAt: s.ends_at, breakMinutes: s.break_minutes,
+      status: s.status, departmentName: s.department_name, locationName: s.location_name, swapPending: inSwap.has(s.id),
+    })),
   };
 }

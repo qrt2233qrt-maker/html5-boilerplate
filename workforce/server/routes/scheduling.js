@@ -29,6 +29,8 @@ export default async function schedulingRoutes(app) {
   app.post('/schedule/copy-week', { preHandler: p('schedules.manage'), schema: { params: params(), body: obj({ fromWeekStart: date, toWeekStart: date }, ['fromWeekStart', 'toWeekStart']) } },
     async (req) => sched.copyWeek(app, req, req.body));
   app.get('/me/week', async (req) => sched.myWeek(app, req));
+  app.get('/timetable', { preHandler: p('self.schedule'), schema: { params: params(), querystring: obj({ ...range, departmentId: uuid }, ['from', 'to']) } },
+    async (req) => sched.timetable(app, req, req.query));
   app.get('/staffing/today', { preHandler: p('schedules.view') }, async (req) => sched.todayStaffing(app, req));
 
   // ----- unavailability -----

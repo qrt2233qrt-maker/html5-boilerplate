@@ -29,6 +29,7 @@ import { memberPage } from './pages/member.js';
 import { clockPage, doorPage } from './clock.js';
 import { tripsPage } from './pages/trips.js';
 import { chatPage, refreshChatBadge } from './pages/chat.js';
+import { timetablePage } from './pages/timetable.js';
 
 route('/login', loginPage);
 route('/register', registerPage);
@@ -57,6 +58,7 @@ route('/member', memberPage);
 route('/clock', clockPage);
 route('/trips', { ...tripsPage, perm: 'attendance.manage' });
 route('/chat', chatPage);
+route('/timetable', { ...timetablePage, perm: 'self.schedule' });
 route('/door', { ...doorPage, perm: 'attendance.manage' });
 route('/more', { title: () => t('more'), render: renderMore });
 
@@ -73,6 +75,7 @@ function navItems() {
     { path: '/chat', icon: ICON.chat, label: t('chat'), show: true, tab: true, badge: 'chat' },
     { path: '/analytics', icon: ICON.chart, label: t('analytics'), show: finance || can('analytics.view'), tab: finance },
     { path: '/finance', icon: ICON.money, label: t('finance'), show: can('business_expenses.view') || can('revenue.view') || finance || can('budgets.manage'), tab: finance },
+    { path: '/timetable', icon: ICON.people, label: t('timetableShort'), show: can('self.schedule'), tab: !manager },
     { path: '/schedule', icon: ICON.calendar, label: manager ? t('schedule') : t('mySchedule'), show: true, tab: !finance },
     { path: '/approvals', icon: ICON.approve, label: t('approvals'), show: approvals, tab: approvals && !finance },
     { path: '/requests', icon: ICON.swap, label: t('myRequests'), show: can('self.requests') || can('self.swaps'), tab: !approvals },
