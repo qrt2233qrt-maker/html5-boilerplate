@@ -78,7 +78,7 @@ export default async function financeRoutes(app) {
 
   // ----- payroll -----
   app.get('/payroll/runs', { preHandler: p('payroll.view') }, async (req) => pay.listRuns(app, req));
-  app.post('/payroll/runs', { preHandler: p('payroll.manage'), schema: { params: params(), body: obj({ date }) } }, async (req) => pay.createRun(app, req, req.body || {}));
+  app.post('/payroll/runs', { preHandler: p('payroll.manage'), schema: { params: params(), body: obj({ date, frequency: oneOf('daily', 'weekly', 'biweekly', 'monthly') }) } }, async (req) => pay.createRun(app, req, req.body || {}));
   app.get('/payroll/runs/:id', { preHandler: p('payroll.view'), schema: { params: idParams } }, async (req) => pay.getRun(app, req, req.params.id));
   app.post('/payroll/runs/:id/recalculate', { preHandler: p('payroll.manage'), schema: { params: idParams } }, async (req) => pay.recalculate(app, req, req.params.id));
   app.post('/payroll/runs/:id/items', {

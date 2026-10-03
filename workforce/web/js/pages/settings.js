@@ -5,8 +5,9 @@ import { ICON } from '../icons.js';
 import { S, bpath, can } from '../state.js';
 import { money } from '../fmt.js';
 import { empty, formSheet } from '../components.js';
-import { busy, skeletonRows, toast, toastError } from '../ui.js';
+import { busy, closeSheet, confirmDialog, skeletonRows, toast, toastError } from '../ui.js';
 import { $, html, mount } from '../util.js';
+import { canOpenDoor, clockError, position } from '../clock.js';
 
 const WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];
 const dayName = (d) => new Intl.DateTimeFormat(LANG === 'ar' ? 'ar-IQ' : 'en-GB', { weekday: 'long', timeZone: 'UTC' }).format(new Date(Date.UTC(2024, 0, 7 + d)));
@@ -37,6 +38,7 @@ export const settingsPage = {
         ${card('sched', t('schedulingRules'), t('schedulingRulesBody'), kv([[t('maxWeeklyHours'), s.scheduling.maxWeeklyHours], [t('maxShiftHours'), s.scheduling.maxShiftHours], [t('minRestHours'), s.scheduling.minRestHours]]), editBtn('sched'))}
         ${card('pay', t('payrollSettings'), '', kv([[t('payFrequency'), t(`freq_${s.payroll.frequency}`)], [t('weekStartsOn'), dayName(s.payroll.weekStartsOn)], [t('overtimeAfter'), `${s.payroll.overtimeWeeklyHours} ${t('hoursShort')}`], [t('overtimeRate'), `×${s.payroll.overtimeMultiplier}`]]), editBtn('pay'))}
         ${card('appr', t('approvalRules'), t('approvalRulesBody'), kv([[t('ownerApprovalOver'), money(s.approvals.expenseOwnerOver)]]), editBtn('appr'))}
+        ${card('zone', t('clockZone'), t('clockZoneBody'), kv([[t('requireZone'), s.attendance.requireZone ? t('on') : t('off')], [t('locationsWithPosition'), String(locs.filter((l) => !l.archivedAt && l.latitude !== null).length)]]), editBtn('zone'))}
         ${card('alerts', t('alertThresholds'), t('alertThresholdsBody'), kv([[t('alert_payroll'), `${s.alerts.payrollIncreasePct}%`], [t('alert_category'), `${s.alerts.categoryIncreasePct}%`], [t('alert_revenue'), `${s.alerts.revenueDropPct}%`], [t('alert_overtime'), `${s.alerts.overtimeIncreasePct}%`], [t('alert_margin'), `${s.alerts.marginBelowPct}%`], [t('alert_large'), money(s.alerts.largeExpense)]]), editBtn('alerts'))}
         ${can('security.manage') ? card('sec', t('authSettings'), t('authSettingsBody'), kv([[t('requirePhone'), s.auth.requirePhoneVerification ? t('on') : t('off')]]), html`<button class="btn small" type="button" data-edit="sec">${t('edit')}</button>`) : ''}
       </div><div>
@@ -68,11 +70,13 @@ export const settingsPage = {
         { name: 'minRestHours', label: t('minRestHours'), type: 'number', value: s.scheduling.minRestHours },
       ], onSubmit: (v) => save({ settings: { scheduling: v } }) }),
       pay: () => formSheet({ title: t('payrollSettings'), fields: [
-        { name: 'frequency', label: t('payFrequency'), type: 'seg', value: s.payroll.frequency, options: ['weekly', 'biweekly', 'monthly'].map((k) => [k, t(`freq_${k}`)]) },
+        { name: 'frequency', label: t('payFrequency'), type: 'seg', value: s.payroll.frequency, options: ['daily', 'weekly', 'biweekly', 'monthly'].map((k) => [k, t(`freq_${k}`)]) },
         { name: 'weekStartsOn', label: t('weekStartsOn'), type: 'select', value: s.payroll.weekStartsOn, options: WEEKDAYS.map((d) => [d, dayName(d)]) },
         { name: 'overtimeWeeklyHours', label: t('overtimeAfter'), type: 'number', value: s.payroll.overtimeWeeklyHours },
         { name: 'overtimeMultiplier', label: t('overtimeRate'), type: 'text', value: s.payroll.overtimeMultiplier, attrs: 'inputmode="decimal"' },
       ], onSubmit: (v) => save({ settings: { payroll: { ...v, weekStartsOn: Number(v.weekStartsOn), overtimeMultiplier: Number(v.overtimeMultiplier) } } }) }),
+      zone: () => formSheet({ title: t('clockZone'), intro: t('clockZoneBody'), fields: [{ name: 'requireZone', label: t('requireZoneLong'), type: 'checkbox', value: s.attendance.requireZone }],
+        onSubmit: (v) => save({ settings: { attendance: v } }) }),
       appr: () => formSheet({ title: t('approvalRules'), fields: [{ name: 'expenseOwnerOver', label: t('ownerApprovalOver'), type: 'money', value: s.approvals.expenseOwnerOver, required: true }],
         onSubmit: (v) => save({ settings: { approvals: v } }) }),
       alerts: () => formSheet({ title: t('alertThresholds'), fields: [
@@ -100,14 +104,46 @@ export const settingsPage = {
       }
       if (b.dataset.loc) {
         const l = locs.find((x) => x.id === b.dataset.loc);
-        return formSheet({ title: l ? l.name : t('addLocation'), fields: [
+        const sheet = formSheet({ title: l ? l.name : t('addLocation'), intro: t('zoneIntro'), fields: [
           { name: 'name', label: t('name'), value: l?.name || '', required: true },
           { name: 'address', label: t('address'), value: l?.address || '', optional: true },
+          { name: 'latitude', label: t('latitude'), type: 'number', value: l?.latitude ?? '', optional: true, attrs: 'step="any" dir="ltr"' },
+          { name: 'longitude', label: t('longitude'), type: 'number', value: l?.longitude ?? '', optional: true, attrs: 'step="any" dir="ltr"' },
+          { name: 'radiusM', label: t('zoneRadius'), type: 'number', value: l?.radiusM ?? 100, hint: t('zoneRadiusHint'), attrs: 'min="20" max="2000" step="10"' },
+          { name: 'doorMode', label: t('doorCodeType'), type: 'seg', full: true, value: l?.doorMode || 'screen', options: [['screen', t('doorMode_screen')], ['daily', t('doorMode_daily')]] },
           l ? { name: 'archived', label: t('archived'), type: 'checkbox', value: !!l.archivedAt } : null,
         ], onSubmit: async (v) => {
-          if (l) await api.put(bpath(`/locations/${l.id}`), v); else await api.post(bpath('/locations'), { name: v.name, address: v.address });
+          const body = { name: v.name, address: v.address, latitude: v.latitude ?? null, longitude: v.longitude ?? null, radiusM: v.radiusM, doorMode: v.doorMode };
+          if (l) await api.put(bpath(`/locations/${l.id}`), { ...body, archived: v.archived }); else await api.post(bpath('/locations'), body);
           settingsPage.render(view);
         } });
+        // Stand inside the restaurant and tap: fills in the position.
+        const latField = sheet.querySelector('#f-latitude')?.closest('.field');
+        latField?.insertAdjacentHTML('beforebegin', `<div class="field full"><button class="btn small" type="button" id="here">${t('useMyLocation')}</button>
+          <span class="hint" id="here-msg">${t('useMyLocationHint')}</span></div>`);
+        sheet.querySelector('#here')?.addEventListener('click', async (e) => {
+          const btn = e.currentTarget;
+          const msg = sheet.querySelector('#here-msg');
+          busy(btn);
+          try {
+            const p = await position();
+            sheet.querySelector('#f-latitude').value = p.lat.toFixed(6);
+            sheet.querySelector('#f-longitude').value = p.lng.toFixed(6);
+            msg.textContent = t('positionSet', { m: Math.round(p.accuracy) });
+          } catch (err) { msg.textContent = clockError(err); }
+          busy(btn, false);
+        });
+        if (l && !l.archivedAt) {
+          sheet.querySelector('.sfoot').insertAdjacentHTML('afterbegin', `${canOpenDoor() ? `<a class="btn" href="#/door?l=${l.id}">${t('openDoorScreen')}</a>` : ''}
+            <button class="btn ghost" type="button" id="reset-door">${t('resetDoorCode')}</button>`);
+          sheet.querySelector('#reset-door').onclick = async () => {
+            if (!(await confirmDialog({ title: t('resetDoorCodeQ'), body: t('resetDoorCodeBody'), confirm: t('resetDoorCode') }))) return;
+            await api.post(bpath(`/locations/${l.id}/door/reset`));
+            toast(t('doorCodeReset'));
+          };
+          sheet.querySelector('.sfoot a')?.addEventListener('click', () => closeSheet());
+        }
+        return sheet;
       }
       if (b.dataset.cat) {
         const [type, id] = b.dataset.cat.split(':');

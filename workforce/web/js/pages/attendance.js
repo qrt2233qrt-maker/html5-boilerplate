@@ -8,6 +8,7 @@ import { dayLabel, hours, isoToZoned, num, time, zonedToIso } from '../fmt.js';
 import { dateRangeBar, empty, formSheet, rangeState } from '../components.js';
 import { busy, openSheet, skeletonRows, toast, toastError } from '../ui.js';
 import { $, html, mount } from '../util.js';
+import { zoneSheet } from '../clock.js';
 
 export const attendancePage = {
   title: () => t('attendance'),
@@ -38,8 +39,8 @@ export const attendancePage = {
       const total = recs.reduce((a, x) => a + (x.hours || 0), 0);
       mount($('#list', view), recs.length ? html`<p class="muted small">${t('totalWorked')}: <b class="num">${hours(total)}</b></p>
         <div class="tablewrap"><table class="data"><thead><tr>${manager ? html`<th>${t('person')}</th>` : ''}<th>${t('date')}</th><th>${t('clockIn')}</th><th>${t('clockOut')}</th><th>${t('break')}</th><th>${t('hoursCol')}</th><th>${t('late')}</th><th></th></tr></thead>
-        <tbody>${recs.map((a) => html`<tr>${manager ? html`<td>${a.memberName}</td>` : ''}<td>${dayLabel(a.clockIn)}</td><td class="num">${time(a.clockIn)}</td>
-          <td class="num">${a.clockOut ? time(a.clockOut) : html`<span class="pill ok">${t('st_working')}</span>`}</td><td class="num">${a.breakMinutes ? `${a.breakMinutes}′` : '—'}</td>
+        <tbody>${recs.map((a) => html`<tr>${manager ? html`<td>${a.memberName}</td>` : ''}<td>${dayLabel(a.clockIn)}</td><td class="num">${time(a.clockIn)}${where(a.inDistanceM)}</td>
+          <td class="num">${a.clockOut ? html`${time(a.clockOut)}${where(a.outDistanceM)}` : html`<span class="pill ok">${t('st_working')}</span>`}</td><td class="num">${a.breakMinutes ? `${a.breakMinutes}′` : '—'}</td>
           <td class="num">${a.hours === null ? '—' : num(a.hours)}</td><td class="num">${a.lateMinutes ? html`<span class="pill warn">${a.lateMinutes}′</span>` : '—'}</td>
           <td>${a.source === 'manager' ? html`<button class="btn small ghost" type="button" data-hist="${a.id}">${t('history')}</button>` : ''}
             ${can('attendance.manage') ? html`<button class="btn small ghost" type="button" data-edit="${a.id}">${t('correct')}</button>` : ''}</td></tr>`)}</tbody></table></div>`
@@ -64,15 +65,19 @@ export const attendancePage = {
   },
 };
 
+// How far from the door the phone was when clocking in or out.
+const where = (m) => (m === null || m === undefined ? '' : html` <small class="muted" title="${t('distanceFromDoor')}">· ${num(m, 0)} ${t('metresShort')}</small>`);
+
 function drawClock(view, week, reload) {
   const c = week.clockedIn;
   const s = week.today[0];
   mount($('#clock', view), html`<div class="clock-card"><span class="ic">${ICON.clock}</span>
     <div class="mid"><b>${c ? t('clockedInSince', { time: time(c.since) }) : t('notClockedIn')}</b>
       <span class="muted small">${s ? `${t('todaysShift')}: ${time(s.startsAt)}–${time(s.endsAt)}` : t('noShiftToday')}</span></div>
-    ${c ? html`<input class="input brk" type="number" min="0" max="600" id="brk" placeholder="${t('breakMinutes')}" aria-label="${t('breakMinutes')}">` : ''}
+    ${c && !week.zoneRequired ? html`<input class="input brk" type="number" min="0" max="600" id="brk" placeholder="${t('breakMinutes')}" aria-label="${t('breakMinutes')}">` : ''}
     <button class="btn ${c ? '' : 'primary'}" type="button" id="clockbtn">${c ? t('clockOut') : t('clockIn')}</button></div>`);
   $('#clockbtn', view).onclick = async (e) => {
+    if (week.zoneRequired) return zoneSheet({ out: !!c, onDone: reload });
     // Keep the button: the event's currentTarget is cleared once we await.
     const btn = e.currentTarget;
     busy(btn);

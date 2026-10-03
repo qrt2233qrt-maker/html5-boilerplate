@@ -24,8 +24,9 @@ export default async function peopleRoutes(app) {
           properties: {
             auth: obj({ requirePhoneVerification: bool }),
             scheduling: obj({ maxWeeklyHours: int(1, 168), maxShiftHours: int(1, 24), minRestHours: int(0, 24) }),
-            payroll: obj({ frequency: oneOf('weekly', 'biweekly', 'monthly'), weekStartsOn: int(0, 6), overtimeWeeklyHours: int(1, 168), overtimeMultiplier: { type: 'number', minimum: 1, maximum: 3 } }),
+            payroll: obj({ frequency: oneOf('daily', 'weekly', 'biweekly', 'monthly'), weekStartsOn: int(0, 6), overtimeWeeklyHours: int(1, 168), overtimeMultiplier: { type: 'number', minimum: 1, maximum: 3 } }),
             approvals: obj({ expenseOwnerOver: int(0, 1e15) }),
+            attendance: obj({ requireZone: bool }),
             alerts: obj({ payrollIncreasePct: int(1, 1000), categoryIncreasePct: int(1, 1000), revenueDropPct: int(1, 100), overtimeIncreasePct: int(1, 1000), marginBelowPct: int(-100, 100), largeExpense: int(1, 1e15) }),
           },
         },
@@ -46,11 +47,18 @@ export default async function peopleRoutes(app) {
     async (req) => settings.saveDepartment(app, req, req.params.id, req.body));
 
   app.get('/locations', async (req) => settings.listLocations(app, req));
-  const locBody = obj({ name: str(80), address: optStr(200), archived: bool });
+  const nullableNum = (min, max) => ({ type: ['number', 'null'], minimum: min, maximum: max });
+  const locBody = obj({
+    name: str(80), address: optStr(200), archived: bool,
+    latitude: nullableNum(-90, 90), longitude: nullableNum(-180, 180), radiusM: int(20, 2000), doorMode: oneOf('screen', 'daily'),
+  });
   app.post('/locations', { preHandler: p('schedules.manage'), schema: { params: params(), body: { ...locBody, required: ['name'] } } },
     async (req, reply) => reply.code(201).send(await settings.saveLocation(app, req, null, req.body)));
   app.put('/locations/:id', { preHandler: p('schedules.manage'), schema: { params: idParams, body: locBody } },
     async (req) => settings.saveLocation(app, req, req.params.id, req.body));
+  // The door code (QR) for clocking in; managers open it on the door tablet.
+  app.get('/locations/:id/door', { preHandler: p('attendance.manage'), schema: { params: idParams } }, async (req) => settings.doorCode(app, req, req.params.id));
+  app.post('/locations/:id/door/reset', { preHandler: p('schedules.manage'), schema: { params: idParams } }, async (req) => settings.resetDoorCode(app, req, req.params.id));
 
   // ----- categories -----
   const catType = { type: oneOf('expense', 'revenue') };
@@ -78,7 +86,7 @@ export default async function peopleRoutes(app) {
   app.get('/members/:membershipId/pay-rates', { schema: { params: mid } }, async (req) => people.listPayRates(app, req, req.params.membershipId));
   app.post('/members/:membershipId/pay-rates', {
     preHandler: p('payroll.manage'),
-    schema: { params: mid, body: obj({ payType: oneOf('hourly', 'salaried'), rate: int(0, 1e15), effectiveFrom: date, note: optStr(200) }, ['payType', 'rate', 'effectiveFrom']) },
+    schema: { params: mid, body: obj({ payType: oneOf('hourly', 'salaried', 'per_trip'), rate: int(0, 1e15), effectiveFrom: date, note: optStr(200), frequency: { enum: ['daily', 'weekly', 'biweekly', 'monthly', null] } }, ['payType', 'rate', 'effectiveFrom']) },
   }, async (req, reply) => reply.code(201).send(await people.addPayRate(app, req, req.params.membershipId, req.body)));
 
   app.post('/members/:membershipId/terminate', {

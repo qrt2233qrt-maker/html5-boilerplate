@@ -343,7 +343,7 @@ export async function profitAndLoss(db, businessId, from, to) {
     `SELECT count(*)::int AS count, coalesce(sum(amount), 0)::bigint AS amount FROM employee_expenses
       WHERE business_id = $1 AND status IN ('approved', 'reimbursed') AND spent_on BETWEEN $2 AND $3`, [businessId, from, to]);
   const { rows: [pay] } = await db.query(
-    `SELECT coalesce(sum(i.amount) FILTER (WHERE i.kind IN ('base', 'bonus', 'adjustment', 'overtime')), 0)::bigint AS gross,
+    `SELECT coalesce(sum(i.amount) FILTER (WHERE i.kind IN ('base', 'trips', 'bonus', 'adjustment', 'overtime')), 0)::bigint AS gross,
             coalesce(sum(i.amount) FILTER (WHERE i.kind = 'overtime'), 0)::bigint AS overtime,
             coalesce(sum(i.amount) FILTER (WHERE i.kind = 'bonus'), 0)::bigint AS bonuses,
             coalesce(sum(i.amount) FILTER (WHERE i.kind = 'deduction'), 0)::bigint AS deductions,

@@ -13,7 +13,7 @@ import { PERMISSIONS, PERMISSION_KEYS, defaultAllowed, isOwnerOnly } from '../au
 import { managedScope, scopeSql } from '../lib/context.js';
 import { currentPaySql } from './people.js';
 
-const PAY_FIELDS = ['payType', 'payRate'];
+const PAY_FIELDS = ['payType', 'payRate', 'payFrequency'];
 
 function flush(app, req) {
   app.outbox.flush().catch((err) => req.log.error({ err }, 'outbox flush failed'));
@@ -164,7 +164,7 @@ export async function previewInvitation(app, req, token) {
 }
 
 async function joinBusiness(db, req, inv, userId) {
-  const { payType, payRate, department, departmentId: chosen, ...profile } = inv.profile || {};
+  const { payType, payRate, payFrequency, department, departmentId: chosen, ...profile } = inv.profile || {};
   let departmentId = null;
   if (chosen) {
     // Still there? It may have been archived since the invitation went out.
@@ -183,9 +183,9 @@ async function joinBusiness(db, req, inv, userId) {
   if (!m) throw conflict('already_member', 'You are already part of this business.');
   if (payRate !== undefined) {
     await db.query(
-      `INSERT INTO pay_rates (business_id, membership_id, pay_type, rate, effective_from, note, created_by)
-       VALUES ($1, $2, $3, $4, coalesce($5::date, CURRENT_DATE), 'Set at invitation', $6)`,
-      [inv.business_id, m.id, payType || 'salaried', payRate, profile.startDate || null, inv.invited_by]);
+      `INSERT INTO pay_rates (business_id, membership_id, pay_type, rate, effective_from, note, created_by, frequency)
+       VALUES ($1, $2, $3, $4, coalesce($5::date, CURRENT_DATE), 'Set at invitation', $6, $7)`,
+      [inv.business_id, m.id, payType || 'salaried', payRate, profile.startDate || null, inv.invited_by, payFrequency || null]);
   }
   await db.query('UPDATE invitations SET accepted_at = now(), accepted_user_id = $2 WHERE id = $1', [inv.id, userId]);
   await audit(db, req, { businessId: inv.business_id, actorId: userId, action: 'invitation.accepted', targetType: 'membership', targetId: m.id, after: { role: inv.role } });

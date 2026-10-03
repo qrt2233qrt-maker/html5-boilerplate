@@ -76,3 +76,7 @@ export function presetRange(key, ref = todayLocal()) {
 }
 
 export const dirIsRtl = () => LANG === 'ar';
+
+// "per hour", "per month" or "per trip", and how often someone is paid.
+export const payUnit = (payType) => t(payType === 'hourly' ? 'perHour' : payType === 'per_trip' ? 'perTrip' : 'perMonth');
+export const payFreqLabel = (frequency) => (frequency ? t(`freq_${frequency}`) : t('freqBusinessDefault'));

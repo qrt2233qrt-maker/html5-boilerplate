@@ -1,7 +1,9 @@
 // Business settings, departments, locations and categories.
 import { transaction } from '../db/pool.js';
 import { badRequest, conflict, notFound } from '../lib/errors.js';
+import QRCode from 'qrcode';
 import { DEFAULT_SETTINGS, auditB, business, settingsOf } from '../lib/context.js';
+import { currentDoorCode } from '../lib/geo.js';
 
 // Built-in categories. The first group matches the existing expenses app.
 export const EXPENSE_CATEGORIES = [
@@ -145,26 +147,64 @@ export async function saveDepartment(app, req, id, { name, managerId = null, arc
   });
 }
 
+const locationOut = (r) => ({
+  id: r.id, name: r.name, address: r.address, archivedAt: r.archived_at,
+  latitude: r.latitude, longitude: r.longitude, radiusM: r.radius_m, doorMode: r.door_mode,
+});
+
 export async function listLocations(app, req) {
   const { rows } = await app.db.query(
-    'SELECT id, name, address, archived_at AS "archivedAt" FROM locations WHERE business_id = $1 ORDER BY archived_at NULLS FIRST, lower(name)', [req.member.businessId]);
-  return rows;
+    'SELECT * FROM locations WHERE business_id = $1 ORDER BY archived_at NULLS FIRST, lower(name)', [req.member.businessId]);
+  return rows.map(locationOut);
 }
 
-export async function saveLocation(app, req, id, { name, address, archived }) {
+export async function saveLocation(app, req, id, { name, address, archived, latitude, longitude, radiusM, doorMode }) {
   const db = app.db;
+  // The position is set or cleared as a pair.
+  const pos = latitude === undefined && longitude === undefined ? undefined : [latitude ?? null, longitude ?? null];
+  if (pos && (pos[0] === null) !== (pos[1] === null)) throw badRequest('invalid_position', 'Give both latitude and longitude.');
   let row;
   if (id) {
     ({ rows: [row] } = await db.query(
       `UPDATE locations SET name = coalesce($3, name), address = coalesce($4, address),
-         archived_at = CASE WHEN $5::boolean IS NULL THEN archived_at WHEN $5 THEN coalesce(archived_at, now()) ELSE NULL END
-       WHERE id = $1 AND business_id = $2 RETURNING *`, [id, req.member.businessId, name ?? null, address ?? null, archived ?? null]));
+         archived_at = CASE WHEN $5::boolean IS NULL THEN archived_at WHEN $5 THEN coalesce(archived_at, now()) ELSE NULL END,
+         latitude = CASE WHEN $6::boolean THEN $7 ELSE latitude END, longitude = CASE WHEN $6::boolean THEN $8 ELSE longitude END,
+         radius_m = coalesce($9, radius_m), door_mode = coalesce($10, door_mode)
+       WHERE id = $1 AND business_id = $2 RETURNING *`,
+      [id, req.member.businessId, name ?? null, address ?? null, archived ?? null, !!pos, pos?.[0] ?? null, pos?.[1] ?? null, radiusM ?? null, doorMode ?? null]));
     if (!row) throw notFound();
   } else {
-    ({ rows: [row] } = await db.query('INSERT INTO locations (business_id, name, address) VALUES ($1, $2, $3) RETURNING *', [req.member.businessId, name, address ?? null]));
+    ({ rows: [row] } = await db.query(
+      `INSERT INTO locations (business_id, name, address, latitude, longitude, radius_m, door_mode)
+       VALUES ($1, $2, $3, $4, $5, coalesce($6, 100), coalesce($7, 'screen')) RETURNING *`,
+      [req.member.businessId, name, address ?? null, pos?.[0] ?? null, pos?.[1] ?? null, radiusM ?? null, doorMode ?? null]));
   }
-  await auditB(db, req, { action: id ? 'location.updated' : 'location.created', targetType: 'location', targetId: row.id, after: { name: row.name } });
-  return { id: row.id, name: row.name, address: row.address, archivedAt: row.archived_at };
+  await auditB(db, req, {
+    action: id ? 'location.updated' : 'location.created', targetType: 'location', targetId: row.id,
+    after: { name: row.name, positionSet: row.latitude !== null, radiusM: row.radius_m, doorMode: row.door_mode },
+  });
+  return locationOut(row);
+}
+
+// The code to show at the door now, as text and as a QR image. Scanning it
+// opens the clock page with the location and code filled in.
+export async function doorCode(app, req, id) {
+  const biz = await business(req);
+  const { rows: [loc] } = await app.db.query('SELECT * FROM locations WHERE id = $1 AND business_id = $2 AND archived_at IS NULL', [id, biz.id]);
+  if (!loc) throw notFound();
+  const { code, validUntil, day } = currentDoorCode(loc, biz.timezone);
+  const url = `${app.config.appUrl}/#/clock?l=${loc.id}&c=${code}`;
+  const qrSvg = await QRCode.toString(url, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' });
+  return { locationId: loc.id, locationName: loc.name, businessName: biz.name, mode: loc.door_mode, code, validUntil, day: day ?? null, url, qrSvg, positionSet: loc.latitude !== null };
+}
+
+// New secret: every code shown or printed so far stops working.
+export async function resetDoorCode(app, req, id) {
+  const { rowCount } = await app.db.query(
+    'UPDATE locations SET door_secret = replace(gen_random_uuid()::text || gen_random_uuid()::text, \'-\', \'\') WHERE id = $1 AND business_id = $2', [id, req.member.businessId]);
+  if (!rowCount) throw notFound();
+  await auditB(app.db, req, { action: 'location.door_code_reset', targetType: 'location', targetId: id });
+  return { ok: true };
 }
 
 // ---------- categories ----------

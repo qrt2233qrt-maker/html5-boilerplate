@@ -6,6 +6,7 @@ import { S, bpath, can, isOwner } from '../state.js';
 import { dayLabel, hours, money, moneyShort, num, presetRange, shiftRange, time, todayLocal } from '../fmt.js';
 import { chartCard, lineChart } from '../charts.js';
 import { empty, kpiTile, statusPill, waitingOnMe } from '../components.js';
+import { zoneSheet } from '../clock.js';
 import { busy, toast, toastError } from '../ui.js';
 import { noticeText } from './notifications.js';
 import { $, LS, html, mount } from '../util.js';
@@ -104,6 +105,8 @@ async function employeeHome(view, body) {
       ${tile('/account', ICON.user, t('profile'))}
     </div>`);
   $('#clock', body).onclick = async (e) => {
+    // At the restaurant the door code and the phone's position are needed.
+    if (week.zoneRequired) return zoneSheet({ out: !!clocked, onDone: () => homePage.render(view) });
     // Keep the button: the event's currentTarget is cleared once we await.
     const btn = e.currentTarget;
     busy(btn);

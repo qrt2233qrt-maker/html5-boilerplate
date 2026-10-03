@@ -45,7 +45,8 @@ export default async function businessRoutes(app) {
             properties: {
               employeeNumber: str(40, 0), jobTitle: str(80, 0), department: str(80, 0), departmentId: uuid,
               startDate: { type: 'string', format: 'date' },
-              payType: { enum: ['hourly', 'salaried'] }, payRate: { type: 'integer', minimum: 0 },
+              payType: { enum: ['hourly', 'salaried', 'per_trip'] }, payRate: { type: 'integer', minimum: 0 },
+              payFrequency: { enum: ['daily', 'weekly', 'biweekly', 'monthly'] },
             },
           },
         },

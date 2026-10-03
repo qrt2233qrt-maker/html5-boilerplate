@@ -2,21 +2,30 @@
 import { api } from '../api.js';
 import { t, tn } from '../i18n.js';
 import { ICON } from '../icons.js';
-import { bpath, can } from '../state.js';
-import { dateShort, money, num, todayLocal } from '../fmt.js';
+import { S, bpath, can } from '../state.js';
+import { addDays, dateShort, dayLabel, money, num, todayLocal } from '../fmt.js';
 import { empty, formSheet, statusPill } from '../components.js';
 import { busy, confirmDialog, openSheet, skeletonRows, toast, toastError } from '../ui.js';
 import { $, html, mount } from '../util.js';
 
-const period = (p) => `${dateShort(p.periodStart)} – ${dateShort(p.periodEnd)}`;
+const period = (p) => (p.periodStart === p.periodEnd ? dateShort(p.periodStart) : `${dateShort(p.periodStart)} – ${dateShort(p.periodEnd)}`);
 
 export const payPage = {
   title: () => t('myPay'),
   async render(view) {
     mount(view, skeletonRows(4));
-    const data = await api.get(bpath('/me/pay'));
+    const [data, trips] = await Promise.all([
+      api.get(bpath('/me/pay')),
+      api.get(bpath(`/trips?mine=true&from=${addDays(todayLocal(), -13)}&to=${todayLocal()}`)).catch(() => null),
+    ]);
     if (!view.isConnected) return;
     const c = data.current;
+    // Drivers see the trips entered for them, so they can check their pay.
+    const myTrips = trips?.drivers.length ? html`<section class="panel"><h2>${t('myTrips')}</h2>
+      ${trips.entries.length ? html`<div class="listbox">${[...trips.entries].reverse().map((e) => html`<div class="row"><span class="mid"><span class="t1">${dayLabel(e.day)}</span>
+        ${e.note ? html`<span class="t2">${e.note}</span>` : ''}</span><span class="end"><b class="num">${tn('tripsN', e.trips)}</b>
+        <span class="t2 num">${money(e.trips * (trips.drivers[0].pay?.rate || 0))}</span></span></div>`)}</div>` : empty(t('noTripsYet'))}
+      <p class="hint">${t('myTripsHint')}</p></section>` : '';
     mount(view, html`${c ? html`<section class="note pay-hero"><div class="lbl">${t('payThisPeriod')} · ${period(c)}</div>
         <div class="big num">${money(c.net)}</div><div class="meta">${statusPill(c.status)}${c.paidAt ? html`<span class="chip">${t('paidOn', { date: dateShort(c.paidAt) })}</span>` : ''}</div>
         ${c.status === 'review' && c.reviewNote ? html`<p class="small">${c.reviewNote}</p>` : ''}</section>
@@ -24,6 +33,7 @@ export const payPage = {
         <dt>${t('hoursWorked')}</dt><dd class="num">${num(c.hours)}</dd>
         <dt>${t('basePay')}</dt><dd class="num">${money(c.base)}</dd>
         <dt>${t('overtime')}${c.overtimeHours ? ` (${num(c.overtimeHours)} ${t('hoursShort')})` : ''}</dt><dd class="num">${money(c.overtime)}</dd>
+        ${c.tripCount ? html`<dt>${t('deliveryTrips')} (${num(c.tripCount, 0)})</dt><dd class="num">${money(c.trips)}</dd>` : ''}
         <dt>${t('bonuses')}</dt><dd class="num">${money(c.bonuses + c.adjustments)}</dd>
         <dt>${t('deductions')}</dt><dd class="num">− ${money(c.deductions)}</dd>
         <dt>${t('reimbursements')}</dt><dd class="num">+ ${money(c.reimbursements)}</dd>
@@ -32,7 +42,7 @@ export const payPage = {
         <thead><tr><th>${t('period')}</th><th>${t('hoursCol')}</th><th>${t('gross')}</th><th>${t('expenses')}</th><th>${t('deductions')}</th><th>${t('net')}</th><th>${t('status')}</th></tr></thead>
         <tbody>${data.history.map((h) => html`<tr><td>${period(h)}</td><td class="num">${num(h.hours)}</td><td class="num">${money(h.gross)}</td><td class="num">${money(h.reimbursements)}</td>
           <td class="num">${money(h.deductions)}</td><td class="num"><b>${money(h.net)}</b></td><td>${statusPill(h.status)}</td></tr>`)}</tbody></table></div>
-        <p class="hint">${t('payReadOnly')}</p></section>` : ''}`);
+        <p class="hint">${t('payReadOnly')}</p></section>` : ''}${myTrips}`);
   },
 };
 
@@ -46,13 +56,16 @@ export const payrollPage = {
     const runs = await api.get(bpath('/payroll/runs'));
     if (!view.isConnected) return;
     mount($('#runs', view), runs.length ? html`<div class="listbox">${runs.map((r) => html`<a class="row" href="#/payroll?run=${r.id}">
-      <span class="avatar">${ICON.pay}</span><span class="mid"><span class="t1">${period(r)}</span><span class="t2">${tn('peopleN', r.people)}</span></span>
+      <span class="avatar">${ICON.pay}</span><span class="mid"><span class="t1">${period(r)}</span><span class="t2">${t(`freq_${r.frequency}`)} · ${tn('peopleN', r.people)}</span></span>
       <span class="end"><b class="num">${money(r.net)}</b>${statusPill(r.status)}</span><span class="chev">${ICON.chev}</span></a>`)}</div>`
       : empty(t('noPayrollRuns'), t('noPayrollRunsBody')));
     $('#new', view)?.addEventListener('click', () => formSheet({
       title: t('startPayroll'), intro: t('startPayrollBody'), submitLabel: t('calculate'),
-      fields: [{ name: 'date', label: t('dayInPeriod'), type: 'date', value: todayLocal(), required: true }],
-      onSubmit: async (v) => { const r = await api.post(bpath('/payroll/runs'), { date: v.date }); location.hash = `#/payroll?run=${r.id}`; },
+      fields: [
+        { name: 'frequency', label: t('whoToPay'), type: 'seg', full: true, value: S.settings?.payroll?.frequency || 'monthly', options: ['daily', 'weekly', 'biweekly', 'monthly'].map((f) => [f, t(`payGroup_${f}`)]) },
+        { name: 'date', label: t('dayInPeriod'), type: 'date', value: todayLocal(), required: true },
+      ],
+      onSubmit: async (v) => { const r = await api.post(bpath('/payroll/runs'), { date: v.date, frequency: v.frequency }); location.hash = `#/payroll?run=${r.id}`; },
     }));
   },
 };
@@ -63,15 +76,16 @@ async function runView(view, id) {
   if (!view.isConnected) return;
   const edit = can('payroll.manage');
   const draft = r.status === 'draft';
+  const trips = r.people.some((p) => p.tripCount);
   mount(view, html`<p><a href="#/payroll">← ${t('allPayrolls')}</a></p>
-    <div class="toolbar"><h2 class="h2 grow">${period(r)} ${statusPill(r.status)}</h2>
+    <div class="toolbar"><h2 class="h2 grow">${period(r)} <span class="pill">${t(`freq_${r.frequency}`)}</span> ${statusPill(r.status)}</h2>
       ${edit && draft ? html`<button class="btn small" type="button" data-a="recalc">${t('recalculate')}</button><button class="btn small primary" type="button" data-a="finalize">${t('finalize')}</button>` : ''}
       ${edit && r.status === 'finalized' ? html`<button class="btn small" type="button" data-a="reopen">${t('reopen')}</button><button class="btn small primary" type="button" data-a="pay">${t('markAllPaid')}</button>` : ''}</div>
     <div class="kpis small">${[['gross', r.totals.gross], ['reimbursements', r.totals.reimbursements], ['deductions', r.totals.deductions], ['net', r.totals.net]].map(([k, v]) => html`<div class="kpi"><small>${t(k)}</small><b class="num">${money(v || 0)}</b></div>`)}</div>
     ${r.status === 'paid' ? html`<div class="banner ok"><span>${ICON.lock} ${t('runLocked')}</span></div>` : ''}
-    ${r.people.length ? html`<div class="tablewrap"><table class="data"><thead><tr><th>${t('person')}</th><th>${t('hoursCol')}</th><th>${t('basePay')}</th><th>${t('overtime')}</th><th>${t('bonuses')}</th><th>${t('deductions')}</th><th>${t('expenses')}</th><th>${t('net')}</th><th>${t('status')}</th><th></th></tr></thead>
+    ${r.people.length ? html`<div class="tablewrap"><table class="data"><thead><tr><th>${t('person')}</th><th>${t('hoursCol')}</th><th>${t('basePay')}</th><th>${t('overtime')}</th>${trips ? html`<th>${t('tripsCol')}</th>` : ''}<th>${t('bonuses')}</th><th>${t('deductions')}</th><th>${t('expenses')}</th><th>${t('net')}</th><th>${t('status')}</th><th></th></tr></thead>
       <tbody>${r.people.map((p) => html`<tr><td>${p.name}</td><td class="num">${num(p.hours)}</td><td class="num">${money(p.base)}</td><td class="num">${money(p.overtime)}</td>
-        <td class="num">${money(p.bonuses + p.adjustments)}</td><td class="num">${money(p.deductions)}</td><td class="num">${money(p.reimbursements)}</td><td class="num"><b>${money(p.net)}</b></td><td>${statusPill(p.status)}</td>
+        ${trips ? html`<td class="num">${p.tripCount ? html`${money(p.trips)} <small class="muted">(${p.tripCount})</small>` : '—'}</td>` : ''}<td class="num">${money(p.bonuses + p.adjustments)}</td><td class="num">${money(p.deductions)}</td><td class="num">${money(p.reimbursements)}</td><td class="num"><b>${money(p.net)}</b></td><td>${statusPill(p.status)}</td>
         <td class="row-gap">${edit && draft ? html`<button class="btn small ghost" type="button" data-item="${p.membershipId}">${t('addLine')}</button>` : ''}
           ${edit && r.status !== 'paid' && p.status !== 'paid' ? html`<button class="btn small ghost" type="button" data-review="${p.membershipId}" data-on="${p.status === 'review' ? 0 : 1}">${p.status === 'review' ? t('clearReview') : t('flagReview')}</button>` : ''}
           ${edit && r.status === 'finalized' && p.status === 'pending' ? html`<button class="btn small ghost" type="button" data-paid="${p.membershipId}">${t('markPaid')}</button>` : ''}

@@ -119,7 +119,7 @@ async function build(app, req, type, { from, to, departmentId, membershipId, cat
     const { rows } = await db.query(
       `SELECT r.period_start, r.period_end, u.name, s.status,
               coalesce(sum(i.minutes) FILTER (WHERE i.kind IN ('base', 'overtime')), 0) / 60.0 AS hours,
-              coalesce(sum(i.amount) FILTER (WHERE i.kind IN ('base', 'overtime', 'bonus', 'adjustment')), 0)::bigint AS gross,
+              coalesce(sum(i.amount) FILTER (WHERE i.kind IN ('base', 'overtime', 'trips', 'bonus', 'adjustment')), 0)::bigint AS gross,
               coalesce(sum(i.amount) FILTER (WHERE i.kind = 'overtime'), 0)::bigint AS overtime,
               coalesce(sum(i.amount) FILTER (WHERE i.kind = 'reimbursement'), 0)::bigint AS reimbursements,
               coalesce(sum(i.amount) FILTER (WHERE i.kind = 'deduction'), 0)::bigint AS deductions

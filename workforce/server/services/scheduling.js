@@ -4,6 +4,7 @@ import { AppError, badRequest, conflict, forbidden, notFound } from '../lib/erro
 import { assertRange, auditB, business, inScope, managedScope, scopeSql } from '../lib/context.js';
 import { notifyMember } from '../lib/notify.js';
 import { can } from '../auth/session.js';
+import { zoneRequired } from './attendance.js';
 
 const HOUR = 3600000;
 
@@ -337,6 +338,8 @@ export async function myWeek(app, req) {
   const reqCount = Object.fromEntries(reqs.map((r) => [r.status, r.n]));
   return {
     weekStart: w.ws,
+    // Clocking in needs the door code and the phone's position.
+    zoneRequired: await zoneRequired(db, biz),
     today: [...new Map(today.map((s) => [s.id, s])).values()],
     next: next ? shiftOut(next) : null,
     shifts: list,

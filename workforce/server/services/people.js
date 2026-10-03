@@ -24,7 +24,7 @@ async function canSee(req, id) {
   return can(req, 'members.view') && inScope(req, id);
 }
 
-export const currentPaySql = `(SELECT row_to_json(p) FROM (SELECT pay_type AS "payType", rate, effective_from AS "effectiveFrom"
+export const currentPaySql = `(SELECT row_to_json(p) FROM (SELECT pay_type AS "payType", rate, effective_from AS "effectiveFrom", frequency
   FROM pay_rates WHERE membership_id = m.id AND effective_from <= CURRENT_DATE
   ORDER BY effective_from DESC, created_at DESC LIMIT 1) p)`;
 
@@ -92,23 +92,25 @@ export async function listPayRates(app, req, id) {
   const ok = isSelf(req, id) || ((can(req, 'members.view_sensitive') || can(req, 'payroll.view')) && (await inScope(req, id)));
   if (!ok) throw forbidden();
   const { rows } = await app.db.query(
-    `SELECT p.id, p.pay_type AS "payType", p.rate, p.effective_from AS "effectiveFrom", p.note, p.created_at AS "createdAt", u.name AS "createdBy"
+    `SELECT p.id, p.pay_type AS "payType", p.rate, p.frequency, p.effective_from AS "effectiveFrom", p.note, p.created_at AS "createdAt", u.name AS "createdBy"
        FROM pay_rates p LEFT JOIN users u ON u.id = p.created_by
       WHERE p.membership_id = $1 AND p.business_id = $2 ORDER BY p.effective_from DESC, p.created_at DESC`, [id, req.member.businessId]);
   return rows;
 }
 
-export async function addPayRate(app, req, id, { payType, rate, effectiveFrom, note }) {
+// A new row, never an edit: the old rate (and how often it was paid) stays
+// in force up to the day before. `frequency` null follows the business default.
+export async function addPayRate(app, req, id, { payType, rate, effectiveFrom, note, frequency = null }) {
   return transaction(app.db, async (db) => {
     const m = await loadMember(db, req, id, true);
     if (m.role === 'owner' && req.member.role !== 'owner') throw forbidden();
     if (!(await inScope(req, id))) throw forbidden();
     const { rows: [prev] } = await db.query(
-      'SELECT pay_type, rate, effective_from FROM pay_rates WHERE membership_id = $1 ORDER BY effective_from DESC, created_at DESC LIMIT 1', [id]);
+      'SELECT pay_type, rate, frequency, effective_from FROM pay_rates WHERE membership_id = $1 ORDER BY effective_from DESC, created_at DESC LIMIT 1', [id]);
     const { rows: [row] } = await db.query(
-      `INSERT INTO pay_rates (business_id, membership_id, pay_type, rate, effective_from, note, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`, [req.member.businessId, id, payType, rate, effectiveFrom, note ?? null, req.auth.user.id]);
-    await auditB(db, req, { action: 'member.pay_changed', targetType: 'membership', targetId: id, before: prev || null, after: { pay_type: payType, rate, effective_from: effectiveFrom } });
+      `INSERT INTO pay_rates (business_id, membership_id, pay_type, rate, effective_from, note, created_by, frequency)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`, [req.member.businessId, id, payType, rate, effectiveFrom, note ?? null, req.auth.user.id, frequency]);
+    await auditB(db, req, { action: 'member.pay_changed', targetType: 'membership', targetId: id, before: prev || null, after: { pay_type: payType, rate, frequency, effective_from: effectiveFrom } });
     return { id: row.id };
   });
 }

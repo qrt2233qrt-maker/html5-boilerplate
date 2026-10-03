@@ -4,7 +4,7 @@ import { api } from '../api.js';
 import { t } from '../i18n.js';
 import { ICON } from '../icons.js';
 import { S, bpath, can, isOwner } from '../state.js';
-import { addDays, dateShort, dayLabel, money, num, time, todayLocal } from '../fmt.js';
+import { addDays, dateShort, dayLabel, money, num, payFreqLabel, payUnit, time, todayLocal } from '../fmt.js';
 import { docUrl, empty, formSheet, statusPill, uploadFile } from '../components.js';
 import { busy, skeletonRows, toast, toastError } from '../ui.js';
 import { $, html, initials, mount } from '../util.js';
@@ -65,7 +65,7 @@ function overview(host, m, { self, sensitive, editable, reload }) {
       ${canEdit ? html`<button class="btn small" type="button" id="edit">${t('edit')}</button>` : ''}</div>
       <dl class="kv">${[[t('employeeNumber'), p.employeeNumber], [t('jobTitle'), p.jobTitle], [t('department'), m.departmentName], [t('reportsTo'), m.reportsToName],
         [t('startDate'), p.startDate && dateShort(p.startDate)], [t('email'), m.email], [t('phone'), m.phone], [t('workPhone'), p.workPhone],
-        [t('payRate'), m.pay ? `${money(m.pay.rate)} ${t(m.pay.payType === 'hourly' ? 'perHour' : 'perMonth')}` : null], [t('notes'), p.notes]]
+        [t('payRate'), m.pay ? `${money(m.pay.rate)} ${payUnit(m.pay.payType)} · ${payFreqLabel(m.pay.frequency)}` : null], [t('notes'), p.notes]]
     .filter(([, v]) => v).map(([k, v]) => html`<dt>${k}</dt><dd>${v}</dd>`)}</dl></section>
     ${sensitive ? html`<section class="panel"><div class="panel-head"><h2>${ICON.lock} ${t('personalDetails')}</h2>
       ${self || canEdit ? html`<button class="btn small" type="button" id="editp">${t('edit')}</button>` : ''}</div>
@@ -116,19 +116,20 @@ async function payTab(host, m, self, reload) {
   ]);
   mount(host, html`<section class="panel"><div class="panel-head"><h2>${t('payRateHistory')}</h2>
       ${can('payroll.manage') && !self ? html`<button class="btn small primary" type="button" id="addrate">${t('changePay')}</button>` : ''}</div>
-    ${rates.length ? html`<div class="listbox">${rates.map((r, i) => html`<div class="row"><span class="mid"><span class="t1 num">${money(r.rate)} ${t(r.payType === 'hourly' ? 'perHour' : 'perMonth')}</span>
-      <span class="t2">${t('fromDate', { date: dateShort(r.effectiveFrom) })}${r.note ? ` · ${r.note}` : ''}${r.createdBy ? ` · ${r.createdBy}` : ''}</span></span>${i === 0 ? html`<span class="pill ok">${t('current')}</span>` : ''}</div>`)}</div>` : empty(t('noPayRate'))}</section>
+    ${rates.length ? html`<div class="listbox">${rates.map((r, i) => html`<div class="row"><span class="mid"><span class="t1 num">${money(r.rate)} ${payUnit(r.payType)}</span>
+      <span class="t2">${payFreqLabel(r.frequency)} · ${t('fromDate', { date: dateShort(r.effectiveFrom) })}${r.note ? ` · ${r.note}` : ''}${r.createdBy ? ` · ${r.createdBy}` : ''}</span></span>${i === 0 ? html`<span class="pill ok">${t('current')}</span>` : ''}</div>`)}</div>` : empty(t('noPayRate'))}</section>
     ${pay ? html`<section class="panel"><h2>${t('payHistory')}</h2>${pay.history.length ? html`<div class="tablewrap"><table class="data"><thead><tr><th>${t('period')}</th><th>${t('hoursCol')}</th><th>${t('gross')}</th><th>${t('net')}</th><th>${t('status')}</th></tr></thead>
       <tbody>${pay.history.map((h) => html`<tr><td>${dateShort(h.periodStart)} – ${dateShort(h.periodEnd)}</td><td class="num">${num(h.hours)}</td><td class="num">${money(h.gross)}</td><td class="num">${money(h.net)}</td><td>${statusPill(h.status)}</td></tr>`)}</tbody></table></div>` : empty(t('noPayYet'))}</section>` : ''}`);
   $('#addrate', host)?.addEventListener('click', () => formSheet({
     title: t('changePay'), intro: t('changePayBody'),
     fields: [
-      { name: 'payType', label: t('payType'), type: 'seg', value: rates[0]?.payType || 'salaried', options: [['hourly', t('pay_hourly')], ['salaried', t('pay_salaried')]] },
+      { name: 'payType', label: t('payType'), type: 'seg', full: true, value: rates[0]?.payType || 'salaried', options: [['hourly', t('pay_hourly')], ['salaried', t('pay_salaried')], ['per_trip', t('pay_per_trip')]] },
       { name: 'rate', label: t('payRate'), type: 'money', required: true, hint: t('payRateHint') },
+      { name: 'frequency', label: t('payFrequency'), type: 'select', value: rates[0]?.frequency || '', options: [['', t('freqBusinessDefault')], ...['daily', 'weekly', 'biweekly', 'monthly'].map((f) => [f, t(`freq_${f}`)])], hint: t('payFrequencyHint') },
       { name: 'effectiveFrom', label: t('effectiveFrom'), type: 'date', value: todayLocal(), required: true },
       { name: 'note', label: t('reason'), type: 'text', optional: true },
     ],
-    onSubmit: async (v) => { await api.post(bpath(`/members/${m.membershipId}/pay-rates`), { ...v, note: v.note || null }); reload(); },
+    onSubmit: async (v) => { await api.post(bpath(`/members/${m.membershipId}/pay-rates`), { ...v, frequency: v.frequency || null, note: v.note || null }); reload(); },
   }));
 }
 

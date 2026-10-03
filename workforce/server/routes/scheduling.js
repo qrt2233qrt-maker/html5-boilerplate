@@ -1,8 +1,9 @@
 import * as sched from '../services/scheduling.js';
 import * as requests from '../services/requests.js';
 import * as attendance from '../services/attendance.js';
+import * as trips from '../services/trips.js';
 import { requirePermission } from '../auth/session.js';
-import { bool, date, datetime, idParams, int, obj, oneOf, optStr, optUuid, params, range, str, uuid } from '../lib/schema.js';
+import { arr, bool, date, datetime, idParams, int, obj, oneOf, optStr, optUuid, params, range, str, uuid } from '../lib/schema.js';
 
 const ok = { ok: true };
 const p = (k) => requirePermission(k);
@@ -66,8 +67,10 @@ export default async function schedulingRoutes(app) {
     async (req) => requests.reviewSwap(app, req, req.params.id, req.body));
 
   // ----- attendance -----
-  app.post('/attendance/clock-in', { schema: { params: params(), body: obj({ note: optStr(300) }) } }, async (req) => attendance.clockIn(app, req, req.body || {}));
-  app.post('/attendance/clock-out', { schema: { params: params(), body: obj({ breakMinutes: int(0, 600), note: optStr(300) }) } },
+  // Where the phone is and the code from the door, when the business requires it.
+  const zone = { locationId: optUuid, code: optStr(12), lat: { type: 'number', minimum: -90, maximum: 90 }, lng: { type: 'number', minimum: -180, maximum: 180 }, accuracy: { type: 'number', minimum: 0, maximum: 100000 } };
+  app.post('/attendance/clock-in', { schema: { params: params(), body: obj({ note: optStr(300), ...zone }) } }, async (req) => attendance.clockIn(app, req, req.body || {}));
+  app.post('/attendance/clock-out', { schema: { params: params(), body: obj({ breakMinutes: int(0, 600), note: optStr(300), ...zone }) } },
     async (req) => attendance.clockOut(app, req, req.body || {}));
   app.get('/attendance', { schema: { params: params(), querystring: obj({ ...range, membershipId: uuid, mine: bool }, ['from', 'to']) } },
     async (req) => attendance.listAttendance(app, req, req.query));
@@ -82,4 +85,11 @@ export default async function schedulingRoutes(app) {
     schema: { params: idParams, body: obj({ clockIn: datetime, clockOut: { type: ['string', 'null'], format: 'date-time' }, breakMinutes: int(0, 600), reason: str(500) }, ['reason']) },
   }, async (req) => attendance.adjustAttendance(app, req, req.params.id, req.body));
   app.get('/attendance/:id/history', { schema: { params: idParams } }, async (req) => attendance.attendanceHistory(app, req, req.params.id));
+
+  // ----- delivery trips (drivers paid per trip) -----
+  app.get('/trips', { schema: { params: params(), querystring: obj({ ...range, mine: bool }, ['from', 'to']) } }, async (req) => trips.listTrips(app, req, req.query));
+  app.put('/trips', {
+    preHandler: p('attendance.manage'),
+    schema: { params: params(), body: obj({ day: date, entries: arr(obj({ membershipId: uuid, trips: int(0, 500), note: optStr(200) }, ['membershipId', 'trips']), 200) }, ['day', 'entries']) },
+  }, async (req) => trips.saveTrips(app, req, req.body));
 }

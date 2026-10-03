@@ -26,6 +26,8 @@ import { reportsPage } from './pages/reports.js';
 import { notificationsPage } from './pages/notifications.js';
 import { settingsPage } from './pages/settings.js';
 import { memberPage } from './pages/member.js';
+import { clockPage, doorPage } from './clock.js';
+import { tripsPage } from './pages/trips.js';
 
 route('/login', loginPage);
 route('/register', registerPage);
@@ -51,6 +53,9 @@ route('/reports', { ...reportsPage, perm: () => can('reports.operational') || ca
 route('/notifications', notificationsPage);
 route('/settings', { ...settingsPage, perm: () => can('business.settings.manage') || can('departments.manage') || can('schedules.manage') });
 route('/member', memberPage);
+route('/clock', clockPage);
+route('/trips', { ...tripsPage, perm: 'attendance.manage' });
+route('/door', { ...doorPage, perm: 'attendance.manage' });
 route('/more', { title: () => t('more'), render: renderMore });
 
 const root = () => $('#root');
@@ -69,6 +74,7 @@ function navItems() {
     { path: '/approvals', icon: ICON.approve, label: t('approvals'), show: approvals, tab: approvals && !finance },
     { path: '/requests', icon: ICON.swap, label: t('myRequests'), show: can('self.requests') || can('self.swaps'), tab: !approvals },
     { path: '/attendance', icon: ICON.clock, label: t('attendance'), show: true },
+    { path: '/trips', icon: ICON.scooter, label: t('deliveryTrips'), show: can('attendance.manage') },
     { path: '/pay', icon: ICON.wallet, label: t('myPay'), show: can('self.pay') && !isOwner(), tab: !manager },
     { path: '/expenses', icon: ICON.receipt, label: t('myExpenses'), show: can('self.expenses') && !isOwner() },
     { path: '/payroll', icon: ICON.pay, label: t('payroll'), show: can('payroll.view') },

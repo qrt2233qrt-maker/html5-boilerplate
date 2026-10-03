@@ -1,6 +1,7 @@
 // Team: members, invitations, invite form and per-member actions.
 import { api, qs } from '../api.js';
 import { fmtDate, fmtInt, fmtMoney, relTime, t } from '../i18n.js';
+import { payUnit } from '../fmt.js';
 import { ICON } from '../icons.js';
 import { S, bpath, can, isOwner } from '../state.js';
 import {
@@ -143,7 +144,7 @@ function openMember(view, id) {
   if (!m) return;
   const p = m.profile || {};
   const b = S.business;
-  const pay = m.pay ? `${fmtMoney(m.pay.rate, b.currency, b.currencyExponent)} ${t(m.pay.payType === 'hourly' ? 'perHour' : 'perMonth')}` : null;
+  const pay = m.pay ? `${fmtMoney(m.pay.rate, b.currency, b.currencyExponent)} ${payUnit(m.pay.payType)}` : null;
   const rows = [
     [t('jobTitle'), p.jobTitle], [t('employeeNumber'), p.employeeNumber], [t('department'), m.departmentName],
     [t('startDate'), p.startDate && fmtDate(p.startDate)], [t('payRate'), pay], [t('joined', { when: '' }).trim(), fmtDate(m.joinedAt)],
@@ -331,8 +332,12 @@ function openInvite(view) {
         <div class="seg" role="radiogroup" aria-labelledby="pay-lbl">
           <label><input type="radio" name="payType" value="hourly"><span>${t('pay_hourly')}</span></label>
           <label><input type="radio" name="payType" value="salaried"><span>${t('pay_salaried')}</span></label>
+          <label><input type="radio" name="payType" value="per_trip"><span>${t('pay_per_trip')}</span></label>
         </div></div>
-        ${field({ name: 'payRate', label: `${t('payRate')} (${b.currency})`, inputmode: 'decimal', autocomplete: 'off', attrs: html`dir="ltr"` })}` : ''}
+        ${field({ name: 'payRate', label: `${t('payRate')} (${b.currency})`, inputmode: 'decimal', autocomplete: 'off', attrs: html`dir="ltr"` })}
+        <div class="field"><label class="label" for="f-payFrequency">${t('payFrequency')}</label>
+          <select class="input" id="f-payFrequency" name="payFrequency"><option value="">${t('freqBusinessDefault')}</option>
+            ${['daily', 'weekly', 'biweekly', 'monthly'].map((f) => html`<option value="${f}">${t(`freq_${f}`)}</option>`)}</select></div>` : ''}
       </div></div>
     </form>`,
     foot: html`<button class="btn primary" type="submit" form="invite-form">${ICON.send}${t('sendInvite')}</button>`,
@@ -361,6 +366,7 @@ function openInvite(view) {
       if (rate === null) return fieldError(form, 'payRate', t('e.invalid_input'));
       profile.payRate = rate;
       profile.payType = d.payType || 'salaried';
+      if (d.payFrequency) profile.payFrequency = d.payFrequency;
     }
     await api.post(bpath('/invitations'), { name: d.name, email: d.email, phone: d.phone, role: d.role, profile });
     await success(submitBtn, t('done'));
