@@ -39,3 +39,18 @@ updates:
         patterns:
           - "*"
     open-pull-requests-limit: 2
+
+  - package-ecosystem: npm
+    directory: "/workforce/"
+    schedule:
+      interval: monthly
+    versioning-strategy: increase
+    cooldown:
+      default-days: 7
+    groups:
+      all-dependencies:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
