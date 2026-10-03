@@ -121,6 +121,9 @@ export const registerPage = {
       <form id="register" novalidate>
         <div class="form-error" role="alert"></div>
         ${field({ name: 'businessName', label: t('businessName'), autocomplete: 'organization', required: true })}
+        <div class="field"><label class="label" for="f-businessKind">${t('businessKind')}</label>
+          <select class="input" id="f-businessKind" name="businessKind"><option value="restaurant">${t('kind_restaurant')}</option><option value="general">${t('kind_general')}</option></select>
+          <p class="hint">${t('businessKindHint')}</p></div>
         ${field({ name: 'name', label: t('yourName'), autocomplete: 'name', required: true })}
         ${field({ name: 'email', label: t('email'), type: 'email', autocomplete: 'email', hint: t('contactHint'), attrs: html`dir="ltr" autocapitalize="none" spellcheck="false"` })}
         ${field({ name: 'phone', label: t('phone'), type: 'tel', autocomplete: 'tel', inputmode: 'tel', optional: true, attrs: html`dir="ltr"` })}
@@ -132,7 +135,7 @@ export const registerPage = {
     onSubmit(form, async (d) => {
       if (!d.email && !d.phone) return fieldError(form, 'email', t('e.contact_required'));
       await api.post('/api/auth/register', {
-        businessName: d.businessName, name: d.name, email: d.email, phone: d.phone, password: d.password, locale: LANG,
+        businessName: d.businessName, businessKind: d.businessKind, name: d.name, email: d.email, phone: d.phone, password: d.password, locale: LANG,
       });
       await loadMe();
       go('/verify', { replace: true });

@@ -234,3 +234,66 @@ describe('delivery trips and pay frequency (PizzaRita)', function () {
     assert.equal(edit.body.error.code, 'period_locked');
   });
 });
+
+// ---------- restaurant setup and section costs ----------
+
+describe('restaurant sections (PizzaRita)', function () {
+  let t;
+  beforeEach(async () => { t = await setup(); });
+  afterEach(async () => { await t.close(); });
+
+  it('sets up kitchen, front of house and delivery with restaurant categories, once', async () => {
+    const { owner, mgr, B } = await restaurant(t);
+    assert.equal((await mgr.member.post(B('/setup/restaurant'))).status, 403);
+    const r = (await owner.post(B('/setup/restaurant'))).body;
+    assert.equal(r.kind, 'restaurant');
+    assert.equal(r.sections.length, 3);
+    // Repeating it adds nothing.
+    const again = (await owner.post(B('/setup/restaurant'))).body;
+    assert.deepEqual([again.sections.length, again.expenseCategories, again.revenueCategories], [0, 0, 0]);
+    const keys = (await owner.get(B('/categories/revenue'))).body.map((c) => c.key);
+    assert.ok(['dine_in', 'takeaway', 'delivery_sales'].every((k) => keys.includes(k)));
+    assert.ok((await owner.get(B('/categories/expense'))).body.some((c) => c.key === 'cooking_gas'));
+    assert.equal((await owner.get(B('/settings'))).body.kind, 'restaurant');
+  });
+
+  it('shows costs per section: tagged expenses, claims and pay of the people working there', async () => {
+    const { owner, cook, mgr, B } = await restaurant(t);
+    await owner.post(B('/setup/restaurant'));
+    const depts = (await owner.get(B('/departments'))).body;
+    // Sections are named in the business's language (Arabic here).
+    const AR = { Kitchen: 'المطبخ', 'Front of house': 'الصالة', Delivery: 'التوصيل' };
+    const id = (n) => depts.find((d) => d.name === n || d.name === AR[n]).id;
+    const driver = await addMember(t, owner, (await owner.refresh()).businesses[0].id, { email: 'driver@pizzarita.test', name: 'Yousif Driver' });
+    await owner.put(B(`/members/${driver.membershipId}`), { departmentId: id('Delivery') });
+    await owner.put(B(`/members/${cook.membershipId}`), { departmentId: id('Kitchen') });
+    const cats = (await owner.get(B('/categories/expense'))).body;
+    const cat = (k) => cats.find((c) => c.key === k).id;
+    const sat = pastSaturday();
+    await owner.post(B('/business-expenses'), { amount: 300000, spentOn: sat, categoryId: cat('ingredients'), departmentId: id('Kitchen') });
+    await owner.post(B('/business-expenses'), { amount: 40000, spentOn: sat, categoryId: cat('cooking_gas'), departmentId: id('Kitchen') });
+    await owner.post(B('/business-expenses'), { amount: 25000, spentOn: sat, categoryId: cat('fuel'), departmentId: id('Delivery') });
+    await owner.post(B('/business-expenses'), { amount: 500000, spentOn: sat, categoryId: cat('rent') });
+    // The driver is paid per trip; then moves section, which mustn't rewrite history.
+    await owner.post(B(`/members/${driver.membershipId}/pay-rates`), { payType: 'per_trip', rate: 2500, effectiveFrom: plus(sat, -30), frequency: 'daily' });
+    await mgr.member.put(B('/trips'), { day: sat, entries: [{ membershipId: driver.membershipId, trips: 12 }] });
+    const run = (await owner.post(B('/payroll/runs'), { date: sat, frequency: 'daily' })).body;
+    await owner.post(B(`/payroll/runs/${run.id}/finalize`));
+    await owner.put(B(`/members/${driver.membershipId}`), { departmentId: id('Kitchen') });
+
+    const r = await owner.get(B(`/analytics/sections?from=${sat}&to=${sat}`));
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const s = (n) => r.body.sections.find((x) => x.id === id(n));
+    assert.equal(s('Kitchen').expenses, 340000);
+    assert.equal(s('Kitchen').labour, 0);
+    assert.equal(s('Kitchen').topCategories[0].key, 'ingredients');
+    assert.equal(s('Delivery').expenses, 25000);
+    assert.equal(s('Delivery').labour, 12 * 2500);
+    assert.equal(s('Front of house').total, 0);
+    const none = r.body.sections.find((x) => x.id === null);
+    assert.equal(none.expenses, 500000);
+    assert.equal(r.body.total, 340000 + 25000 + 30000 + 500000);
+    // Only people who can see finance get this.
+    assert.equal((await cook.member.get(B(`/analytics/sections?from=${sat}&to=${sat}`))).status, 403);
+  });
+});

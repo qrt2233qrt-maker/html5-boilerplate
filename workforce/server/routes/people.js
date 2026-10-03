@@ -60,6 +60,9 @@ export default async function peopleRoutes(app) {
   app.get('/locations/:id/door', { preHandler: p('attendance.manage'), schema: { params: idParams } }, async (req) => settings.doorCode(app, req, req.params.id));
   app.post('/locations/:id/door/reset', { preHandler: p('schedules.manage'), schema: { params: idParams } }, async (req) => settings.resetDoorCode(app, req, req.params.id));
 
+  app.post('/setup/restaurant', { preHandler: p('business.settings.manage'), schema: { params: params() } },
+    async (req) => settings.applyRestaurant(app, req));
+
   // ----- categories -----
   const catType = { type: oneOf('expense', 'revenue') };
   app.get('/categories/:type', { schema: { params: params(catType) } }, async (req) => settings.listCategories(app, req, req.params.type));

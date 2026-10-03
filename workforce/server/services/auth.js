@@ -12,7 +12,7 @@ import { queueMessage } from '../messaging/outbox.js';
 import { render } from '../messaging/templates.js';
 import { loadPermissions } from '../auth/permissions.js';
 import { createSession, isVerified } from '../auth/session.js';
-import { seedBusiness } from './settings.js';
+import { seedBusiness, seedRestaurant } from './settings.js';
 
 const CODE_MINUTES = 10;
 const RESET_LINK_MINUTES = 30;
@@ -93,6 +93,7 @@ export async function registerBusiness(app, req, reply, input) {
     await db.query(
       'INSERT INTO memberships (business_id, user_id, role) VALUES ($1, $2, \'owner\')', [business.id, user.id]);
     await seedBusiness(db, business.id);
+    if (input.businessKind === 'restaurant') await seedRestaurant(db, business.id, locale);
     await audit(db, req, { businessId: business.id, actorId: user.id, action: 'business.created', targetType: 'business', targetId: business.id, after: { name: business.name } });
     if (email) await sendEmailCode(app, db, user);
     else await sendPhoneCode(app, db, user);

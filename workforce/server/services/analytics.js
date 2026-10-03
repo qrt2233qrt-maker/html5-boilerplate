@@ -154,6 +154,80 @@ export async function drilldown(app, req, key, { from, to }) {
   };
 }
 
+// Costs per section of the business (kitchen, front of house, delivery …):
+// expenses tagged to the section, staff claims and pay of the people who
+// worked there. Costs not tagged to any section show as "Not assigned".
+async function sectionCosts(db, bizId, from, to) {
+  const { rows } = await db.query(
+    `WITH exp AS (
+       SELECT department_id, sum(amount)::bigint AS amount FROM business_expenses
+        WHERE business_id = $1 AND archived_at IS NULL AND spent_on BETWEEN $2 AND $3 GROUP BY 1
+     ), claims AS (
+       SELECT department_id, sum(amount)::bigint AS amount FROM employee_expenses
+        WHERE business_id = $1 AND status IN ('approved', 'reimbursed') AND spent_on BETWEEN $2 AND $3 GROUP BY 1
+     ), labour AS (
+       SELECT s.department_id, sum(i.amount)::bigint AS amount
+         FROM payroll_runs r JOIN payroll_items i ON i.run_id = r.id
+         JOIN payroll_statements s ON s.run_id = i.run_id AND s.membership_id = i.membership_id
+        WHERE r.business_id = $1 AND r.status IN ('finalized', 'paid') AND r.period_end BETWEEN $2 AND $3
+          AND i.kind IN ('base', 'overtime', 'trips', 'bonus', 'adjustment') GROUP BY 1
+     ), ids AS (SELECT department_id FROM exp UNION SELECT department_id FROM claims UNION SELECT department_id FROM labour)
+     SELECT ids.department_id::text AS id, coalesce(exp.amount, 0)::bigint AS expenses, coalesce(claims.amount, 0)::bigint AS claims, coalesce(labour.amount, 0)::bigint AS labour
+       FROM ids LEFT JOIN exp ON exp.department_id IS NOT DISTINCT FROM ids.department_id
+       LEFT JOIN claims ON claims.department_id IS NOT DISTINCT FROM ids.department_id
+       LEFT JOIN labour ON labour.department_id IS NOT DISTINCT FROM ids.department_id`, [bizId, from, to]);
+  return new Map(rows.map((r) => [r.id ?? 'none', { expenses: Number(r.expenses) + Number(r.claims), labour: Number(r.labour) }]));
+}
+
+export async function sections(app, req, { from, to }) {
+  assertRange(from, to);
+  const biz = await business(req);
+  const db = app.db;
+  const now = await today(db, biz);
+  const end = to > now && now >= from ? now : to;
+  const [pf, pt] = previousRange(from, end);
+  const [cur, prev] = await Promise.all([sectionCosts(db, biz.id, from, to), sectionCosts(db, biz.id, pf, pt)]);
+  const { rows: depts } = await db.query(
+    `SELECT d.id::text, d.name, d.archived_at,
+            (SELECT count(*) FROM memberships m WHERE m.department_id = d.id AND m.status = 'active')::int AS people
+       FROM departments d WHERE d.business_id = $1 ORDER BY d.name`, [biz.id]);
+  const params = [biz.id, from, to, biz.timezone];
+  const { rows: work } = await db.query(
+    `SELECT coalesce(m.department_id::text, 'none') AS id,
+            coalesce(sum(extract(epoch FROM (a.clock_out - a.clock_in)) / 3600 - a.break_minutes / 60.0), 0)::float AS hours
+       FROM attendance a JOIN memberships m ON m.id = a.membership_id
+      WHERE a.business_id = $1 AND a.clock_out IS NOT NULL AND a.clock_in >= ($2::date)::timestamp AT TIME ZONE $4
+        AND a.clock_in < (($3::date) + 1)::timestamp AT TIME ZONE $4 GROUP BY 1`, params);
+  const { rows: trips } = await db.query(
+    `SELECT coalesce(m.department_id::text, 'none') AS id, sum(t.trips)::int AS trips
+       FROM delivery_trips t JOIN memberships m ON m.id = t.membership_id
+      WHERE t.business_id = $1 AND t.day BETWEEN $2 AND $3 GROUP BY 1`, [biz.id, from, to]);
+  // Expense categories within each section, biggest first.
+  const { rows: cats } = await db.query(
+    `SELECT coalesce(x.department_id::text, 'none') AS id, c.key, c.name_en, c.name_ar, c.icon, sum(x.amount)::bigint AS amount
+       FROM business_expenses x JOIN expense_categories c ON c.id = x.category_id
+      WHERE x.business_id = $1 AND x.archived_at IS NULL AND x.spent_on BETWEEN $2 AND $3
+      GROUP BY 1, c.id ORDER BY amount DESC`, [biz.id, from, to]);
+  const zero = { expenses: 0, labour: 0 };
+  const list = [...depts, { id: 'none', name: null, archived_at: null, people: null }].map((d) => {
+    const c = cur.get(d.id) ?? zero;
+    const p = prev.get(d.id) ?? zero;
+    const total = c.expenses + c.labour;
+    const before = p.expenses + p.labour;
+    return {
+      id: d.id === 'none' ? null : d.id, name: d.name, archived: !!d.archived_at, people: d.people,
+      expenses: c.expenses, labour: c.labour, total, previousTotal: before, change: change(total, before),
+      hoursWorked: round(work.find((w) => w.id === d.id)?.hours ?? 0),
+      trips: trips.find((x) => x.id === d.id)?.trips ?? 0,
+      topCategories: cats.filter((x) => x.id === d.id).slice(0, 4).map((x) => ({ key: x.key, nameEn: x.name_en, nameAr: x.name_ar, icon: x.icon, amount: Number(x.amount) })),
+    };
+  }).filter((x) => x.total || x.previousTotal || (!x.archived && x.id));
+  const total = list.reduce((a, x) => a + x.total, 0);
+  for (const x of list) x.share = total ? x.total / total : 0;
+  list.sort((a, b) => (a.id === null) - (b.id === null) || b.total - a.total);
+  return { from, to, previousFrom: pf, previousTo: pt, total, sections: list };
+}
+
 // People and shift numbers. Managers who run departments see their own scope.
 export async function workforce(app, req, { from, to }) {
   assertRange(from, to);

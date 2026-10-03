@@ -16,6 +16,8 @@ export default async function insightRoutes(app) {
     async (req) => analytics.overview(app, req, req.query));
   app.get('/analytics/expenses/:key', { preHandler: p('finance.view'), schema: { params: params({ key: str(80) }), querystring: obj(range, ['from', 'to']) } },
     async (req) => analytics.drilldown(app, req, req.params.key, req.query));
+  app.get('/analytics/sections', { preHandler: p('finance.view'), schema: { params: params(), querystring: obj(range, ['from', 'to']) } },
+    async (req) => analytics.sections(app, req, req.query));
   app.get('/analytics/workforce', { preHandler: p('analytics.view'), schema: { params: params(), querystring: obj(range, ['from', 'to']) } },
     async (req) => analytics.workforce(app, req, req.query));
   app.get('/alerts', { preHandler: p('finance.view') }, async (req) => analytics.listAlerts(app, req));

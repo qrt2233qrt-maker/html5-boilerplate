@@ -2,7 +2,7 @@
 // then charts, drill-downs, workforce numbers and smart alerts.
 import { api } from '../api.js';
 import { LANG, t } from '../i18n.js';
-import { bpath, can } from '../state.js';
+import { S, bpath, can } from '../state.js';
 import { dateShort, dayLabel, hours, money, moneyShort, num, pct } from '../fmt.js';
 import { barChart, chartCard, donut, lineChart } from '../charts.js';
 import { dateRangeBar, empty, kpiTile, rangeState } from '../components.js';
@@ -21,8 +21,7 @@ export const analyticsPage = {
       const body = $('#body', view);
       mount(body, html`<div class="skeleton sk-panel"></div><div class="skeleton sk-panel"></div>`);
       try {
-        if (can('finance.view')) await finance(body, r);
-        else body.innerHTML = '';
+        if (can('finance.view')) { await finance(body, r); await sections(body, r); } else body.innerHTML = '';
         if (can('analytics.view')) await workforce(body, r);
       } catch (err) { toastError(err); }
     };
@@ -52,6 +51,7 @@ async function finance(body, r) {
       <button class="btn small ghost" type="button" data-dismiss="${a.dedupeKey}">${t('dismiss')}</button></div>`)}</section>` : ''}
     <div class="cols">
       <section class="panel" id="c-rev"></section>
+      <section class="panel" id="c-sales"></section>
       <section class="panel" id="c-pl"></section>
       <section class="panel" id="c-exp"></section>
       <section class="panel"><h2>${t('payrollCost')}</h2>
@@ -61,8 +61,6 @@ async function finance(body, r) {
           <div class="kpi"><small>${t('overtimeCost')}</small><b class="num">${money(ov.payroll.overtime)}</b></div>
           <div class="kpi"><small>${t('reimbursements')}</small><b class="num">${money(ov.payroll.reimbursements)}</b></div>
         </div>
-        <h3 class="h2 small">${t('revenueByCategory')}</h3>
-        ${ov.revenueBreakdown.length ? html`<dl class="kv">${ov.revenueBreakdown.map((c) => html`<dt>${nm(c)}</dt><dd class="num">${money(c.amount)}</dd>`)}</dl>` : html`<p class="muted">—</p>`}
       </section>
     </div>`);
   tiles.forEach((x) => x.animate(body));
@@ -79,6 +77,14 @@ async function finance(body, r) {
     title: t('profitLossOverTime'),
     table: { columns: [t('period'), t('profit')], rows: s.map((p, i) => [labels[i], money(p.profit)]) },
   }), { labels, values: s.map((p) => p.profit), diverging: true, format: money, axisFormat: moneyShort, tipLabel: (i) => labels[i] });
+  // Sales by channel (dine-in, takeaway, delivery …) — the revenue categories.
+  const sales = ov.revenueBreakdown.filter((c) => c.amount > 0);
+  const salesBox = chartCard($('#c-sales', body), {
+    title: S.settingsInfo?.kind === 'restaurant' ? t('salesByChannel') : t('revenueByCategory'),
+    table: { columns: [t('category'), t('amount')], rows: ov.revenueBreakdown.map((c) => [nm(c), money(c.amount)]) },
+  });
+  if (sales.length) donut(salesBox, { items: sales.map((c) => ({ key: c.key, label: nm(c), value: c.amount })), format: moneyShort, centerLabel: t('revenue') });
+  else mount(salesBox, empty(t('noRevenueInRange')));
   const expBox = chartCard($('#c-exp', body), {
     title: t('expenseBreakdown'),
     table: { columns: [t('category'), t('amount'), t('share')], rows: ov.expenseBreakdown.map((c) => [nm(c), money(c.amount), pct(c.share, 1)]) },
@@ -110,6 +116,46 @@ async function drill(key, label, r) {
   barChart(chartCard(sheet.querySelector('#d-trend'), {
     title: t('monthlyTrend'), table: { columns: [t('month'), t('amount')], rows: months.map((m) => [m.month, money(m.amount)]) },
   }), { labels: months.map((m) => dayLabel(`${m.month}-01`, { month: 'short' })), values: months.map((m) => m.amount), format: money, axisFormat: moneyShort, slot: 0, tipLabel: (i) => months[i].month });
+}
+
+// What each section of the business costs: its own expenses and claims, and
+// the pay of the people who worked there (spec §11, restaurant sections).
+async function sections(body, r) {
+  const d = await api.get(bpath(`/analytics/sections?from=${r.from}&to=${r.to}`));
+  if (!body.isConnected) return;
+  const host = document.createElement('section');
+  host.className = 'panel';
+  body.append(host);
+  const name = (x) => x.name ?? t('notAssigned');
+  const rows = d.sections;
+  const box = chartCard(host, {
+    title: t('costsBySection'), legend: [{ label: t('staffPay'), slot: 0 }, { label: t('otherCosts'), slot: 1 }],
+    table: {
+      columns: [t('section'), t('staffPay'), t('otherCosts'), t('total'), t('share'), t('change')],
+      rows: rows.map((x) => [name(x), money(x.labour), money(x.expenses), money(x.total), pct(x.share, 1), x.change === null ? '—' : pct(x.change, 1)]),
+    },
+  });
+  box.removeAttribute('dir');
+  if (!rows.some((x) => x.total)) {
+    mount(box, html`${empty(t('noSectionCosts'))}<p class="hint">${t('sectionHint')}</p>`);
+    return;
+  }
+  const max = Math.max(...rows.map((x) => x.total), 1);
+  mount(box, html`<div class="sections">${rows.map((x) => html`<div class="sec">
+      <div class="sec-head"><b>${name(x)}</b><span class="num">${money(x.total)}</span>
+        ${x.change === null ? '' : html`<span class="delta ${x.change > 0 ? 'bad' : x.change < 0 ? 'good' : ''}">${x.change > 0 ? '↑' : x.change < 0 ? '↓' : '='} ${pct(Math.abs(x.change), 0)}</span>`}</div>
+      <div class="sec-bar" role="img" aria-label="${t('sectionBarLabel', { name: name(x), pay: money(x.labour), other: money(x.expenses) })}">
+        <span class="seg s1" data-w="${(x.labour / max) * 100}"></span><span class="seg s2" data-w="${(x.expenses / max) * 100}"></span></div>
+      <p class="t2 muted">${[
+        x.total ? t('shareOfCosts', { p: pct(x.share, 0) }) : null,
+        x.people !== null ? t('peopleCount', { n: num(x.people, 0) }) : null,
+        x.hoursWorked ? hours(x.hoursWorked) : null,
+        x.trips ? t('tripsCount', { n: num(x.trips, 0) }) : null,
+        ...x.topCategories.slice(0, 3).map((c) => `${c.icon || ''} ${nm(c)} ${moneyShort(c.amount)}`),
+      ].filter(Boolean).join(' · ')}</p></div>`)}</div>
+    <p class="hint">${t('sectionHint')}</p>`);
+  // Widths go through CSSOM: inline style attributes are blocked by the CSP.
+  box.querySelectorAll('.seg').forEach((s) => s.style.setProperty('--w', `${s.dataset.w}%`));
 }
 
 async function workforce(body, r) {

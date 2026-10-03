@@ -18,6 +18,7 @@ export default async function authRoutes(app) {
       businessName: str(120), name: str(120), email: str(254, 0), phone: str(32, 0), password,
       locale: { enum: ['ar', 'en'] }, currency: { type: 'string', pattern: '^[A-Z]{3}$' },
       currencyExponent: { type: 'integer', minimum: 0, maximum: 4 }, timezone: str(64),
+      businessKind: { enum: ['general', 'restaurant'] },
     }, ['businessName', 'name', 'password']),
   }, async (req, reply) => {
     await auth.registerBusiness(app, req, reply, req.body);

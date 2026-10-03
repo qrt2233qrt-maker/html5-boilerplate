@@ -703,3 +703,13 @@ html[dir="rtl"] .door-timer span { transform-origin: right; }
 html[dir="rtl"] .chat-compose .iconbtn.primary svg { transform: scaleX(-1); }
 .chat > .banner { margin: 8px 12px; }
 @media (max-width: 760px) { .chat { height: calc(100dvh - 210px); border-radius: var(--radius); } }
+
+/* ---------- costs by section ---------- */
+.sections { display: grid; gap: 14px; }
+.sec-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.sec-head b { flex: 1; }
+.sec-bar { display: flex; gap: 2px; height: 14px; margin: 6px 0 4px; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
+.sec-bar .seg { width: var(--w, 0%); height: 100%; transition: width var(--dur-emph) var(--ease-out); }
+.sec-bar .seg:last-child { border-start-end-radius: 4px; border-end-end-radius: 4px; }
+.sec-bar .seg.s1 { background: var(--series-1); } .sec-bar .seg.s2 { background: var(--series-2); }
+.sec .t2 { margin: 0; font-size: .82rem; }

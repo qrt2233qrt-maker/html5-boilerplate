@@ -35,6 +35,8 @@ export const settingsPage = {
     mount(view, html`
       <div class="cols"><div>
         ${card('biz', t('businessInfo'), '', kv([[t('businessName'), info.name], [t('timezone'), info.timezone], [t('currency'), `${info.currency} (${info.currencyExponent} ${t('decimals')})`]]), editBtn('biz'))}
+        ${manage ? card('rest', t('restaurantSetup'), info.kind === 'restaurant' ? t('restaurantSetupDone') : t('restaurantSetupBody'), '',
+          html`<button class="btn small ${info.kind === 'restaurant' ? '' : 'primary'}" type="button" id="rest-setup">${info.kind === 'restaurant' ? t('addMissing') : t('setUp')}</button>`) : ''}
         ${card('sched', t('schedulingRules'), t('schedulingRulesBody'), kv([[t('maxWeeklyHours'), s.scheduling.maxWeeklyHours], [t('maxShiftHours'), s.scheduling.maxShiftHours], [t('minRestHours'), s.scheduling.minRestHours]]), editBtn('sched'))}
         ${card('pay', t('payrollSettings'), '', kv([[t('payFrequency'), t(`freq_${s.payroll.frequency}`)], [t('weekStartsOn'), dayName(s.payroll.weekStartsOn)], [t('overtimeAfter'), `${s.payroll.overtimeWeeklyHours} ${t('hoursShort')}`], [t('overtimeRate'), `×${s.payroll.overtimeMultiplier}`]]), editBtn('pay'))}
         ${card('appr', t('approvalRules'), t('approvalRulesBody'), kv([[t('ownerApprovalOver'), money(s.approvals.expenseOwnerOver)]]), editBtn('appr'))}
@@ -56,6 +58,16 @@ export const settingsPage = {
           <a class="row" href="#/account"><span class="mid"><span class="t1">${t('notificationSettings')}</span></span><span class="chev">${ICON.chev}</span></a></div>`)}
         ${can('owners.manage') ? card('imp', t('importOldApp'), t('importOldAppBody'), html`<input type="file" accept=".csv,text/csv,application/json,.json" id="impfile" hidden><button class="btn" type="button" id="imp">${ICON.download}${t('chooseExportFile')}</button><p class="small" id="impres"></p>`) : ''}
       </div></div>`);
+    $('#rest-setup', view)?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      busy(btn);
+      try {
+        const r = await api.post(bpath('/setup/restaurant'));
+        S.settingsFor = null;
+        toast(r.sections.length || r.expenseCategories || r.revenueCategories ? t('restaurantSetupAdded', { n: r.sections.length + r.expenseCategories + r.revenueCategories }) : t('restaurantSetupNothing'));
+        settingsPage.render(view);
+      } catch (err) { busy(btn, false); toastError(err); }
+    });
     const save = async (patch) => { await api.put(bpath('/settings'), patch); S.settingsFor = null; settingsPage.render(view); };
     const forms = {
       biz: () => formSheet({ title: t('businessInfo'), fields: [

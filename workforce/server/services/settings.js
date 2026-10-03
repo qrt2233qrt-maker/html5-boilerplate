@@ -65,7 +65,7 @@ export async function seedAll(db) {
 
 // ---------- business settings ----------
 
-const PUBLIC_KEYS = ['id', 'name', 'currency', 'currency_exponent', 'timezone', 'locale'];
+const PUBLIC_KEYS = ['id', 'name', 'kind', 'currency', 'currency_exponent', 'timezone', 'locale'];
 
 export async function getSettings(app, req) {
   const b = await business(req);
@@ -247,4 +247,58 @@ export async function saveCategory(app, req, type, id, input) {
   }
   await auditB(db, req, { action: id ? 'category.updated' : 'category.created', targetType: `${type}_category`, targetId: row.id, after: { nameEn: row.name_en, nameAr: row.name_ar, archived: !!row.archived_at } });
   return (await listCategories(app, req, type)).find((c) => c.id === row.id);
+}
+
+// ---------- restaurant setup ----------
+// Sections (departments) and categories a restaurant needs. Applying it is
+// safe to repeat: anything already there (by name or key) is left alone.
+export const RESTAURANT_SECTIONS = [['Kitchen', 'المطبخ'], ['Front of house', 'الصالة'], ['Delivery', 'التوصيل']];
+export const RESTAURANT_EXPENSES = [
+  ['ingredients', 'Ingredients & food stock', 'مواد غذائية ومكونات', 'operating', '🧀'],
+  ['drinks_stock', 'Drinks stock', 'مخزون المشروبات', 'operating', '🥤'],
+  ['packaging', 'Packaging & boxes', 'تغليف وعلب', 'operating', '📦'],
+  ['cooking_gas', 'Cooking gas', 'غاز الطبخ', 'operating', '🔥'],
+  ['delivery_fees', 'Delivery app commission', 'عمولة تطبيقات التوصيل', 'operating', '🛵'],
+  ['food_waste', 'Food waste', 'هدر الطعام', 'operating', '🗑️'],
+];
+export const RESTAURANT_REVENUE = [
+  ['dine_in', 'Dine-in sales', 'مبيعات الصالة', 'sale'],
+  ['takeaway', 'Takeaway sales', 'مبيعات السفري', 'sale'],
+  ['delivery_sales', 'Delivery sales', 'مبيعات التوصيل', 'sale'],
+];
+
+export async function seedRestaurant(db, businessId, locale = 'en') {
+  const added = { sections: [], expenseCategories: 0, revenueCategories: 0 };
+  for (const [en, ar] of RESTAURANT_SECTIONS) {
+    const name = locale === 'ar' ? ar : en;
+    const { rowCount } = await db.query(
+      `INSERT INTO departments (business_id, name) SELECT $1, $2
+        WHERE NOT EXISTS (SELECT 1 FROM departments WHERE business_id = $1 AND archived_at IS NULL AND lower(name) IN (lower($3), lower($4)))`,
+      [businessId, name, en, ar]);
+    if (rowCount) added.sections.push(name);
+  }
+  for (const [key, en, ar, kind, icon] of RESTAURANT_EXPENSES) {
+    const { rowCount } = await db.query(
+      `INSERT INTO expense_categories (business_id, key, name_en, name_ar, kind, icon, employee_claimable, builtin)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, true) ON CONFLICT (business_id, key) DO NOTHING`,
+      [businessId, key, en, ar, kind, icon, key === 'ingredients' || key === 'packaging']);
+    added.expenseCategories += rowCount;
+  }
+  for (const [key, en, ar, kind] of RESTAURANT_REVENUE) {
+    const { rowCount } = await db.query(
+      `INSERT INTO revenue_categories (business_id, key, name_en, name_ar, kind, builtin)
+       VALUES ($1, $2, $3, $4, $5, true) ON CONFLICT (business_id, key) DO NOTHING`, [businessId, key, en, ar, kind]);
+    added.revenueCategories += rowCount;
+  }
+  await db.query('UPDATE businesses SET kind = \'restaurant\' WHERE id = $1', [businessId]);
+  return added;
+}
+
+export async function applyRestaurant(app, req) {
+  return transaction(app.db, async (db) => {
+    const b = await business(req);
+    const added = await seedRestaurant(db, b.id, b.locale);
+    await auditB(db, req, { action: 'business.restaurant_setup', targetType: 'business', targetId: b.id, after: added });
+    return { kind: 'restaurant', ...added };
+  });
 }
