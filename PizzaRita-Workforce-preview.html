@@ -1001,6 +1001,7 @@ dialog[open] .sbody > * { animation: rise var(--dur-base) var(--ease-out) both; 
   #pv-bar button { border: 0; background: none; color: inherit; font: inherit; font-weight: 600; padding: 6px 10px; border-radius: 8px; min-height: 32px; cursor: pointer; }
   #pv-bar button[aria-pressed="true"] { background: var(--note-ink); color: var(--note-deep); }
   #pv-bar button:focus-visible { outline: 2px solid var(--note-ink); outline-offset: 2px; }
+  #pv-bar .pv-reset { opacity: .75; font-weight: 500; }
 
   #pv-bar .pv-reset { opacity: .75; font-weight: 500; }
 </style>
@@ -1033,15 +1034,19 @@ window.__WF_FIXTURES = {"owner": {"/api/auth/me": {"status": 200, "body": {"csrf
   const KEY = 'wf-demo:';
 
   // ---------- demo state ----------
-  const fresh = () => ({ role: 'owner', signedIn: true, seq: 0, clock: {}, att: [], msgs: {}, del: [], threads: [], swaps: [], reqs: [], exps: [], status: {}, read: [], allRead: {} });
+  const fresh = () => ({ role: 'owner', signedIn: true, seq: 0, clock: [], att: [], msgs: [], del: [], threads: [], swaps: [], reqs: [], exps: [], status: [], read: [], allRead: [] });
   function load() {
     try { if (window.name.startsWith(KEY)) return { ...fresh(), ...JSON.parse(window.name.slice(KEY.length)) }; } catch { /* start over */ }
     try { const s = sessionStorage.getItem('wf-demo'); if (s) return { ...fresh(), ...JSON.parse(s) }; } catch { /* storage blocked */ }
     return fresh();
   }
   const D = load();
-  if (!FX[D.role]) D.role = 'owner';
+  if (!Object.prototype.hasOwnProperty.call(FX, D.role)) D.role = 'owner';
+  // Keyed state (ids come from request paths) lives in Maps, saved as entries.
+  const asMap = (v) => new Map(Array.isArray(v) ? v : []);
+  const M = { clock: asMap(D.clock), msgs: asMap(D.msgs), status: asMap(D.status), allRead: asMap(D.allRead) };
   function save() {
+    for (const k of Object.keys(M)) D[k] = [...M[k]];
     const s = JSON.stringify(D);
     try { window.name = KEY + s; } catch { /* ignore */ }
     try { sessionStorage.setItem('wf-demo', s); } catch { /* storage blocked */ }
@@ -1131,8 +1136,8 @@ window.__WF_FIXTURES = {"owner": {"/api/auth/me": {"status": 200, "body": {"csrf
   }
 
   // ---------- reads with the demo's changes applied ----------
-  const statusOf = (x) => D.status[x.id] || x.status;
-  const withStatus = (x) => (D.status[x.id] ? { ...x, status: D.status[x.id] } : x);
+  const statusOf = (x) => M.status.get(x.id) || x.status;
+  const withStatus = (x) => (M.status.has(x.id) ? { ...x, status: M.status.get(x.id) } : x);
   const inRange = (iso, q) => {
     const d = iso.slice(0, 10);
     return (!q.get('from') || d >= q.get('from')) && (!q.get('to') || d <= q.get('to'));
@@ -1146,7 +1151,7 @@ window.__WF_FIXTURES = {"owner": {"/api/auth/me": {"status": 200, "body": {"csrf
     if (t.a !== mine && t.b !== mine) return null;
     return { id, kind: 'direct', other: { membershipId: otherMid, name: memberName(otherMid), active: true, role: roleOf(otherMid) } };
   }
-  const demoMsgs = (id) => (D.msgs[id] || []).map((m) => ({ ...m, mine: m.senderId === me().mid }));
+  const demoMsgs = (id) => (M.msgs.get(id) || []).map((m) => ({ ...m, mine: m.senderId === me().mid }));
 
   function readOverlay(rest, q, body) {
     const m = me();
@@ -1154,7 +1159,7 @@ window.__WF_FIXTURES = {"owner": {"/api/auth/me": {"status": 200, "body": {"csrf
       const b = clone(body);
       // In the demo you clock in by typing any code (there's no door to scan).
       b.clock = { checkLocation: false, typedCode: true };
-      const c = D.clock[m.mid];
+      const c = M.clock.get(m.mid);
       b.clockedIn = c ? { attendanceId: c.id, since: c.since, shiftId: null } : null;
       return b;
     }
@@ -1227,7 +1232,7 @@ window.__WF_FIXTURES = {"owner": {"/api/auth/me": {"status": 200, "body": {"csrf
     }
     if (rest === '/notifications' && body && Array.isArray(body.items)) {
       const b = clone(body);
-      const all = D.allRead[D.role];
+      const all = M.allRead.get(D.role);
       b.items = b.items.map((n) => (all || D.read.includes(n.id) ? { ...n, readAt: n.readAt || now() } : n));
       if (q.get('unread') === 'true') b.items = b.items.filter((n) => !n.readAt);
       if ('unread' in b && all) b.unread = 0;
@@ -1242,20 +1247,20 @@ window.__WF_FIXTURES = {"owner": {"/api/auth/me": {"status": 200, "body": {"csrf
     const ok = (b = { ok: true }) => reply(200, b);
     let mm;
     if (method === 'POST' && rest === '/attendance/clock-in') {
-      if (D.clock[m.mid]) return fail(409, 'already_clocked_in', 'You are already clocked in.');
+      if (M.clock.has(m.mid)) return fail(409, 'already_clocked_in', 'You are already clocked in.');
       const a = { id: uid(), membershipId: m.mid, memberName: m.name, shiftId: null, locationId: null, locationName: 'PizzaRita', inDistanceM: null, outDistanceM: null, shiftStartsAt: null, shiftEndsAt: null, clockIn: now(), clockOut: null, breakMinutes: 0, source: 'self', note: null, hours: 0, lateMinutes: null };
       D.att.push(a);
-      D.clock[m.mid] = { id: a.id, since: a.clockIn };
+      M.clock.set(m.mid, { id: a.id, since: a.clockIn });
       return ok(a);
     }
     if (method === 'POST' && rest === '/attendance/clock-out') {
-      const c = D.clock[m.mid];
+      const c = M.clock.get(m.mid);
       if (!c) return fail(409, 'not_clocked_in', 'You are not clocked in.');
       const a = D.att.find((x) => x.id === c.id);
       a.clockOut = now();
       a.breakMinutes = Number(body.breakMinutes || 0);
       a.hours = Math.max(0, (new Date(a.clockOut) - new Date(a.clockIn)) / 3600000 - a.breakMinutes / 60);
-      delete D.clock[m.mid];
+      M.clock.delete(m.mid);
       return ok(a);
     }
     if (method === 'POST' && (mm = rest.match(/^\/chat\/threads\/([^/]+)\/messages$/))) {
@@ -1263,9 +1268,9 @@ window.__WF_FIXTURES = {"owner": {"/api/auth/me": {"status": 200, "body": {"csrf
       const text = String(body.body || '').trim();
       if (!text) return fail(400, 'invalid', 'Write a message first.');
       const base = (lookup(`${BIZ}${rest}`, '')?.body || threadFromOthers(rest))?.messages || [];
-      const all = [...base, ...(D.msgs[id] || [])];
+      const all = [...base, ...(M.msgs.get(id) || [])];
       const msg = { id: Math.max(0, ...all.map((x) => x.id)) + 1, senderId: m.mid, senderName: m.name, body: text, deleted: false, createdAt: now(), ref: null };
-      (D.msgs[id] ||= []).push(msg);
+      M.msgs.set(id, [...(M.msgs.get(id) || []), msg]);
       return ok({ ...msg, mine: true });
     }
     if (method === 'DELETE' && (mm = rest.match(/^\/chat\/threads\/([^/]+)\/messages\/(\d+)$/))) {
@@ -1306,10 +1311,10 @@ window.__WF_FIXTURES = {"owner": {"/api/auth/me": {"status": 200, "body": {"csrf
     }
     if (method === 'POST' && (mm = rest.match(/^\/swaps\/([^/]+)\/(respond|cancel|review)$/))) {
       const [, id, act] = mm;
-      if (act === 'respond') D.status[id] = body.accept ? 'pending_approval' : 'rejected';
-      if (act === 'cancel') D.status[id] = 'cancelled';
-      if (act === 'review') D.status[id] = body.approve ? 'approved' : 'rejected';
-      return ok({ id, status: D.status[id] });
+      if (act === 'respond') M.status.set(id, body.accept ? 'pending_approval' : 'rejected');
+      if (act === 'cancel') M.status.set(id, 'cancelled');
+      if (act === 'review') M.status.set(id, body.approve ? 'approved' : 'rejected');
+      return ok({ id, status: M.status.get(id) });
     }
     if (method === 'POST' && rest === '/shift-requests') {
       const s = body.shiftId ? findShift(body.shiftId) : null;
@@ -1324,10 +1329,10 @@ window.__WF_FIXTURES = {"owner": {"/api/auth/me": {"status": 200, "body": {"csrf
     }
     if (method === 'POST' && (mm = rest.match(/^\/shift-requests\/([^/]+)\/(cancel|review|take)$/))) {
       const [, id, act] = mm;
-      if (act === 'cancel') D.status[id] = 'cancelled';
-      if (act === 'review') D.status[id] = body.approve ? 'approved' : 'rejected';
-      if (act === 'take') D.status[id] = 'pending';
-      return ok({ id, status: D.status[id] });
+      if (act === 'cancel') M.status.set(id, 'cancelled');
+      if (act === 'review') M.status.set(id, body.approve ? 'approved' : 'rejected');
+      if (act === 'take') M.status.set(id, 'pending');
+      return ok({ id, status: M.status.get(id) });
     }
     if ((method === 'POST' && rest === '/employee-expenses') || (method === 'PUT' && (mm = rest.match(/^\/employee-expenses\/([^/]+)$/)))) {
       const cats = lookup(`${BIZ}/categories/expense`, '')?.body || [];
@@ -1340,18 +1345,18 @@ window.__WF_FIXTURES = {"owner": {"/api/auth/me": {"status": 200, "body": {"csrf
         status: body.submit ? 'submitted' : 'draft', approvalStep: 1, needsOwner: false, submittedAt: body.submit ? now() : null,
         decidedAt: null, reimbursedAt: null, rejectionReason: null, payrollRunId: null, createdAt: old?.createdAt || now(),
       };
-      delete D.status[e.id];
+      M.status.delete(e.id);
       if (old) Object.assign(old, e); else D.exps.unshift(e);
       return ok(e);
     }
     if (method === 'POST' && (mm = rest.match(/^\/employee-expenses\/([^/]+)\/decide$/))) {
       const id = mm[1];
       const st = { approve: 'approved', reject: 'rejected', review: 'under_review' }[body.action] || 'approved';
-      D.status[id] = st;
+      M.status.set(id, st);
       return ok({ id, status: st });
     }
     if (method === 'POST' && (mm = rest.match(/^\/notifications\/([^/]+)\/read$/))) { D.read.push(mm[1]); return ok(); }
-    if (method === 'POST' && rest === '/notifications/read-all') { D.allRead[D.role] = true; return ok(); }
+    if (method === 'POST' && rest === '/notifications/read-all') { M.allRead.set(D.role, true); return ok(); }
     if (method === 'POST' && rest === '/alerts/dismiss') return ok();
     return null;
   }
@@ -1468,7 +1473,7 @@ window.__WF_FIXTURES = {"owner": {"/api/auth/me": {"status": 200, "body": {"csrf
     reset.type = 'button';
     reset.className = 'pv-reset';
     reset.textContent = l.reset;
-    reset.onclick = () => { const r = D.role; Object.assign(D, fresh(), { role: r }); go(r); };
+    reset.onclick = () => { const r = D.role; Object.assign(D, fresh(), { role: r }); for (const k of Object.keys(M)) M[k].clear(); go(r); };
     seg.append(reset);
     bar.append(seg);
   }
