@@ -143,24 +143,28 @@ async function calculate(db, biz, run, actorId) {
       if (Math.round(amount)) items.push({ kind: c.kind, amount: Math.round(amount), description: c.name, componentId: c.id });
     }
 
-    // Salary advances: one instalment per payroll until repaid, counting
-    // what other payrolls already took back.
-    if (owned.length) {
-      const { rows: advs } = await db.query(
-        `SELECT a.id, a.amount, a.instalment, a.note,
-                coalesce((SELECT sum(i.amount) FROM payroll_items i WHERE i.advance_id = a.id AND i.run_id <> $3), 0)::bigint AS repaid
-           FROM pay_advances a WHERE a.membership_id = $1 AND a.cancelled_at IS NULL AND a.given_on <= $2 ORDER BY a.given_on`, [p.id, end, run.id]);
-      for (const a of advs) {
-        const left = Number(a.amount) - Number(a.repaid);
-        if (left > 0) items.push({ kind: 'advance', amount: Math.min(Number(a.instalment), left), description: a.note || 'Advance repayment', advanceId: a.id });
-      }
-    }
-
     // Approved work expenses not yet repaid.
     const { rows: claims } = await db.query(
       `UPDATE employee_expenses SET payroll_run_id = $2 WHERE membership_id = $1 AND status = 'approved' AND payroll_run_id IS NULL
           AND spent_on <= $3 RETURNING id, amount, description`, [p.id, run.id, end]);
     for (const c of claims) items.push({ kind: 'reimbursement', amount: c.amount, description: c.description, expenseId: c.id });
+
+    // Salary advances: one instalment per payroll until repaid, counting
+    // what other payrolls already took back, and never more than this
+    // payroll leaves to pay (take-home pay doesn't go below zero).
+    if (owned.length) {
+      const { rows: advs } = await db.query(
+        `SELECT a.id, a.amount, a.instalment, a.note,
+                coalesce((SELECT sum(i.amount) FROM payroll_items i WHERE i.advance_id = a.id AND i.run_id <> $3), 0)::bigint AS repaid
+           FROM pay_advances a WHERE a.membership_id = $1 AND a.cancelled_at IS NULL AND a.given_on <= $2 ORDER BY a.given_on`, [p.id, end, run.id]);
+      let room = items.reduce((t, i) => t + (i.kind === 'deduction' ? -Number(i.amount) : Number(i.amount)), 0);
+      for (const a of advs) {
+        const left = Number(a.amount) - Number(a.repaid);
+        const take = Math.min(Number(a.instalment), left, Math.max(0, room));
+        if (take > 0) { items.push({ kind: 'advance', amount: take, description: a.note || 'Advance repayment', advanceId: a.id }); room -= take; }
+      }
+    }
+
 
     for (const i of items) {
       await db.query(

@@ -88,4 +88,13 @@ describe('payroll: allowances, advances, payslips and corrections', function () 
     const r = await mgr.member.post(B(`/payroll/runs/${run.id}/reopen`), { reason: 'try' });
     assert.equal(r.status, 403, JSON.stringify(r.body));
   });
+
+  it('never takes more advance back than the payroll leaves to pay', async () => {
+    const { owner, B, cook } = await shop();
+    await owner.post(B(`/members/${cook.membershipId}/advances`), { amount: 2000000, instalment: 1500000, givenOn: '2024-06-01' });
+    const run = (await owner.post(B('/payroll/runs'), { date: first, frequency: 'monthly' })).body;
+    const p = run.people.find((x) => x.membershipId === cook.membershipId);
+    assert.equal(p.advances, 900000);
+    assert.equal(p.net, 0);
+  });
 });

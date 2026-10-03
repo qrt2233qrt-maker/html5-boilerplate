@@ -202,15 +202,19 @@ export const clockPage = {
           <h2>${out ? t('couldNotClockOut') : t('couldNotClockIn')}</h2><p>${clockError(err)}</p>
           ${err.code === 'invalid_door_code' ? html`<p class="hint">${t('scanAgainHint')}</p>` : html`<button class="btn primary" type="button" id="again">${t('tryAgain')}</button>`}
           ${checkLocation ? html`<p class="hint">${t('locationPrivacy')}</p>` : ''}</div>`);
-        $('#again', view)?.addEventListener('click', () => run(breakMinutes));
+        // Clocking out goes back to the break field, so it can be corrected.
+        $('#again', view)?.addEventListener('click', () => (out ? ask(breakMinutes) : run()));
       }
     };
     if (!out) return run();
-    card(html`<h2>${t('clockOut')}</h2><p class="muted">${t('clockedInSince', { time: time(week.clockedIn.since) })}</p>
-      <div class="field"><label class="label" for="brk2">${t('breakMinutes')}</label>
-        <input class="input" id="brk2" type="number" min="0" max="600" value="0" inputmode="numeric"></div>
-      <button class="btn primary block" type="button" id="go">${t('clockOut')}</button>`);
-    $('#go', view).onclick = () => run(Number($('#brk2', view).value || 0));
+    const ask = (brk = 0) => {
+      card(html`<h2>${t('clockOut')}</h2><p class="muted">${t('clockedInSince', { time: time(week.clockedIn.since) })}</p>
+        <div class="field"><label class="label" for="brk2">${t('breakMinutes')}</label>
+          <input class="input" id="brk2" type="number" min="0" max="600" value="${brk}" inputmode="numeric"></div>
+        <button class="btn primary block" type="button" id="go">${t('clockOut')}</button>`);
+      $('#go', view).onclick = () => run(Number($('#brk2', view).value || 0));
+    };
+    ask();
   },
 };
 

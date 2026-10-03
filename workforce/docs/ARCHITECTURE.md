@@ -286,6 +286,15 @@ house and delivery drivers (`004_restaurant.sql`, `005_sections.sql`):
 - **Sections:** departments are the restaurant's sections. `GET /analytics/sections` sums business expenses tagged to a section, approved staff claims and payroll (base, overtime, trips, bonuses, adjustments) by section. Statements and claims store the section the person was in at the time (filled in by a trigger), so moving someone doesn't rewrite past months. Sales by channel are the revenue categories.
 - **Restaurant preset:** `businesses.kind`; `POST /setup/restaurant` adds the sections and categories and can be repeated safely.
 
+### Later additions (October 2026)
+
+- **Timetable** (`GET /timetable`, `web/js/pages/timetable.js`): every member sees the published shifts of the whole team (names, times, sections only — no notes, pay or contacts), by day, week or month. The signed-in person's shifts use the accent colour and everyone else shares one colour. Tapping a colleague's future shift starts a swap (`POST /swaps`) or a private chat.
+- **Opening hours and shift types** (`settings.hours`, `PUT /schedule/hours`, permission `schedules.manage`): opens 04:00, closes 02:00 (a closing time at or before opening means after midnight), with Morning 04:00–15:00 and Night 15:00–02:00 by default. Used to pre-fill new shifts, to name shifts on the timetable and as the day view's span.
+- **QR clock-in**: `web/js/clock.js` scans the door QR with `BarcodeDetector` or, where missing, jsQR (served from `node_modules` at `/vendor/jsQR.js`, so the CSP stays `script-src 'self'`). `settings.attendance.checkLocation` (default on) and `typedCode` (default off) let the owner rely on the QR alone or allow typing the code.
+- **Payroll** (`006_payroll_plus.sql`): `pay_components` (monthly allowance/deduction, spread over the days paid), `pay_advances` (instalments as `advance` items, capped at what the payroll leaves to pay), payslips (`GET /payroll/runs/:id/payslips/:membershipId`), and `payroll_corrections`: the owner can reopen a paid payroll with a reason (claims it repaid become owed again, statements go back to pending, affected people are notified); finalizing again records the new total.
+- **Expenses** (`007_expenses_plus.sql`): quantity, unit and unit price (amount = quantity × unit price), `paid`/`due_on`/`paid_on` for bills on credit (`GET /bills`, `POST /business-expenses/:id/pay`), and `GET /suppliers` (spend per supplier and the latest unit price against the one before).
+- **Free messaging**: with `EMAIL_TRANSPORT`/`SMS_TRANSPORT` = `none` (the production default) invitations and password resets are one-time links shared by hand; see SECURITY.md.
+
 ### Importing the current expenses app (Phase 8)
 
 The live artifact's data differs slightly from the expense skill's reference
