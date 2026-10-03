@@ -713,3 +713,7 @@ html[dir="rtl"] .chat-compose .iconbtn.primary svg { transform: scaleX(-1); }
 .sec-bar .seg:last-child { border-start-end-radius: 4px; border-end-end-radius: 4px; }
 .sec-bar .seg.s1 { background: var(--series-1); } .sec-bar .seg.s2 { background: var(--series-2); }
 .sec .t2 { margin: 0; font-size: .82rem; }
+
+/* ---------- share a link ---------- */
+.share-link { display: flex; gap: 8px; margin: 10px 0 14px; }
+.share-link .input { flex: 1; min-width: 0; font-size: .85rem; }

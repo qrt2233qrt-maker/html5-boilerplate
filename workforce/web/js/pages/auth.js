@@ -138,7 +138,7 @@ export const registerPage = {
         businessName: d.businessName, businessKind: d.businessKind, name: d.name, email: d.email, phone: d.phone, password: d.password, locale: LANG,
       });
       await loadMe();
-      go('/verify', { replace: true });
+      go(pendingVerification() ? '/verify' : '/home', { replace: true });
     }, { fieldMap: { account_exists: 'email' } });
     $('#f-businessName', card).focus();
   },
@@ -226,6 +226,13 @@ export const forgotPage = {
       <p class="auth-foot"><a href="#/login">${t('back')}</a></p>`);
     onSubmit($('#forgot', card), async (d) => {
       await api.post('/api/auth/password/forgot', { identifier: d.identifier });
+      // Nothing can be sent from this server: someone at work makes a link.
+      const srv = S.server || {};
+      if (!(d.identifier.includes('@') ? srv.email : srv.sms)) {
+        step(card, html`<h1>${t('forgotTitle')}</h1><p class="muted">${t('forgotAskManager')}</p>
+          <a class="btn block" href="#/login">${t('signIn')}</a>`);
+        return;
+      }
       if (d.identifier.includes('@')) {
         step(card, html`${successMark}<h1>${t('forgotTitle')}</h1><p class="muted">${t('forgotSentEmail', { to: d.identifier })}</p>
           <a class="btn block" href="#/login">${t('signIn')}</a>`);

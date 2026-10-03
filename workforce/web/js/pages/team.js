@@ -1,4 +1,5 @@
 // Team: members, invitations, invite form and per-member actions.
+import { shareSheet } from '../share.js';
 import { api, qs } from '../api.js';
 import { fmtDate, fmtInt, fmtMoney, relTime, t } from '../i18n.js';
 import { payUnit } from '../fmt.js';
@@ -159,6 +160,9 @@ function openMember(view, id) {
   if (actionable && can('permissions.manage') && m.status === 'active') {
     actions.push(html`<button class="btn" type="button" data-a="perms">${ICON.sliders}${t('memberPermissions', { name: m.name.split(' ')[0] })}</button>`);
   }
+  if (actionable && can('members.invite') && m.status === 'active' && m.role !== 'owner' && (m.role !== 'manager' || S.business.role === 'owner')) {
+    actions.push(html`<button class="btn" type="button" data-a="resetlink">${ICON.key}${t('passwordResetLink')}</button>`);
+  }
   if (actionable && can('members.suspend')) {
     if (m.status === 'active') actions.push(html`<button class="btn danger" type="button" data-a="suspend">${ICON.lock}${t('suspend')}</button>`);
     if (m.status === 'suspended') actions.push(html`<button class="btn" type="button" data-a="reactivate">${ICON.key}${t('reactivate')}</button>`);
@@ -189,6 +193,16 @@ async function memberAction(view, m, action, btn) {
     reactivate: { call: () => api.post(bpath(`/members/${m.membershipId}/reactivate`)), done: t('reactivatedToast', { name: first }) },
   };
   if (action === 'perms') return openMemberPermissions(m);
+  if (action === 'resetlink') {
+    if (!(await confirmDialog({ title: t('resetLinkQ', { name: first }), body: t('resetLinkBody'), confirm: t('createLink') }))) return;
+    try {
+      const r = await api.post(bpath(`/members/${m.membershipId}/reset-link`));
+      closeSheet();
+      setTimeout(() => shareSheet({ title: t('passwordResetLink'), intro: t('resetLinkIntro', { name: first }), link: r.link,
+        message: t('resetLinkMessage', { name: first, link: r.link }), phone: m.phone, email: m.email }), 350);
+    } catch (err) { toastError(err); }
+    return;
+  }
   const f = flows[action];
   if (f.title && !(await confirmDialog({ title: f.title, body: f.body, confirm: f.confirm, danger: f.danger }))) return;
   busy(btn);
@@ -247,6 +261,13 @@ async function openMemberPermissions(m) {
 
 // ---------- invitations ----------
 
+function shareInvite(inv) {
+  shareSheet({
+    title: t('shareInviteTitle', { name: inv.name }), intro: t('shareInviteIntro', { days: 7 }),
+    link: inv.share.link, message: inv.share.message, phone: inv.phone, email: inv.email, sentBy: inv.share.sentBy,
+  });
+}
+
 function inviteRow(inv) {
   const pill = { pending: 'warn', expired: 'over' }[inv.status] || '';
   const when = inv.status === 'expired' ? t('inv_expired') : t('sentAgo', { when: relTime(inv.lastSentAt) });
@@ -255,7 +276,7 @@ function inviteRow(inv) {
     <span class="mid"><span class="t1">${inv.name}</span><span class="t2 ltrline">${inv.email || inv.phone}</span>
       <span class="t2">${t(`role_${inv.role}`)} · ${when}</span></span>
     <span class="end"><span class="pill ${pill}">${t(`inv_${inv.status}`)}</span>
-      <span class="row-gap"><button class="btn small ghost" type="button" data-inv="resend" data-id="${inv.id}">${t('resendInvite')}</button>
+      <span class="row-gap"><button class="btn small ghost" type="button" data-inv="resend" data-id="${inv.id}">${t('shareNewLink')}</button>
       <button class="btn small ghost" type="button" data-inv="revoke" data-id="${inv.id}" aria-label="${t('revokeInvite')}: ${inv.name}">${ICON.x}</button></span></span>
   </div>`;
 }
@@ -287,13 +308,15 @@ async function inviteAction(view, action, id, btn) {
   }
   busy(btn);
   try {
-    await api.post(bpath(`/invitations/${id}/${action}`));
+    if (action === 'revoke') await api.post(bpath(`/invitations/${id}/revoke`));
     if (action === 'revoke') {
       await removeAnimated(btn.closest('.li'));
       st.invites = st.invites.filter((i) => i.id !== id);
       toast(t('inviteRevokedToast'));
     } else {
-      toast(t('inviteResent'));
+      // The old link stops working; share the new one.
+      const r = await api.post(bpath(`/invitations/${id}/resend`));
+      shareInvite({ ...inv, share: r.share });
     }
     await loadInvites(view);
   } catch (err) {
@@ -368,11 +391,12 @@ function openInvite(view) {
       profile.payType = d.payType || 'salaried';
       if (d.payFrequency) profile.payFrequency = d.payFrequency;
     }
-    await api.post(bpath('/invitations'), { name: d.name, email: d.email, phone: d.phone, role: d.role, profile });
+    const inv = await api.post(bpath('/invitations'), { name: d.name, email: d.email, phone: d.phone, role: d.role, profile });
     await success(submitBtn, t('done'));
     closeSheet();
-    toast(t('inviteSent', { name: d.name }));
     loadInvites(view);
+    // The link is shown once: share it on WhatsApp or copy it (free).
+    setTimeout(() => shareInvite(inv), 350);
   });
   $('#f-name', sheet).focus();
 }

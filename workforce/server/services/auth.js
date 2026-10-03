@@ -1,3 +1,4 @@
+import { channelOn } from '../config.js';
 import { transaction } from '../db/pool.js';
 import { AppError, badRequest, conflict, forbidden } from '../lib/errors.js';
 import { audit } from '../lib/audit.js';
@@ -95,8 +96,11 @@ export async function registerBusiness(app, req, reply, input) {
     await seedBusiness(db, business.id);
     if (input.businessKind === 'restaurant') await seedRestaurant(db, business.id, locale);
     await audit(db, req, { businessId: business.id, actorId: user.id, action: 'business.created', targetType: 'business', targetId: business.id, after: { name: business.name } });
-    if (email) await sendEmailCode(app, db, user);
-    else await sendPhoneCode(app, db, user);
+    // With no email/SMS service there is nothing to send a code with, so the
+    // owner's contact is taken as given (it's their own business).
+    if (email && channelOn(app.config, 'email')) await sendEmailCode(app, db, user);
+    else if (!email && channelOn(app.config, 'sms')) await sendPhoneCode(app, db, user);
+    else await db.query(`UPDATE users SET ${email ? 'email' : 'phone'}_verified_at = now() WHERE id = $1`, [user.id]);
     const session = await createSession(db, app, req, reply, user.id);
     return { user, session };
   });
@@ -221,6 +225,7 @@ export async function requestVerification(app, req, channel) {
   const field = channel === 'email' ? 'email' : 'phone';
   if (!user[field]) throw badRequest('no_contact', `There is no ${field} on this account.`);
   if (user[`${field}_verified_at`]) return;
+  if (!channelOn(app.config, channel)) throw badRequest('channel_off', 'Codes can\'t be sent from this server.');
   await rateLimit(app.db, `verify:${channel}:min:${user.id}`, 1, 60);
   await rateLimit(app.db, `verify:${channel}:hour:${user.id}`, 5, 3600);
   await (channel === 'email' ? sendEmailCode : sendPhoneCode)(app, app.db, user);
@@ -255,6 +260,8 @@ export async function forgotPassword(app, req, { identifier }) {
   const { rows: [user] } = await app.db.query(
     `SELECT * FROM users WHERE ${id.email ? 'email' : 'phone'} = $1 AND status = 'active'`, [key]);
   if (!user) return;
+  // Nothing to send with: the owner or a manager shares a reset link instead.
+  if (!channelOn(app.config, id.email ? 'email' : 'sms')) return;
   await transaction(app.db, async (db) => {
     if (id.email) {
       const token = randomToken();
@@ -280,13 +287,13 @@ export async function resetPassword(app, req, { token, identifier, code, passwor
   if (token) {
     const { rows: [tok] } = await app.db.query(
       `SELECT t.id AS token_id, u.* FROM verification_tokens t JOIN users u ON u.id = t.user_id
-        WHERE t.code_hash = $1 AND t.purpose = 'password_reset' AND t.target = 'email'
+        WHERE t.code_hash = $1 AND t.purpose = 'password_reset' AND t.target IN ('email', 'link')
           AND t.consumed_at IS NULL AND t.expires_at > now()`, [sha256(token)]);
     if (!tok) throw badRequest('invalid_link', 'This reset link is invalid or has expired. Request a new one.');
     const done = await app.db.query('UPDATE verification_tokens SET consumed_at = now() WHERE id = $1 AND consumed_at IS NULL RETURNING id', [tok.token_id]);
     if (!done.rows[0]) throw badRequest('invalid_link', 'This reset link is invalid or has expired. Request a new one.');
     user = tok;
-    channel = 'email';
+    channel = tok.target === 'email' ? 'email' : null;
   } else {
     let id;
     try {
@@ -306,8 +313,8 @@ export async function resetPassword(app, req, { token, identifier, code, passwor
   await transaction(app.db, async (db) => {
     // Receiving the link or code proves the user controls that channel.
     await db.query(
-      `UPDATE users SET password_hash = $2, password_changed_at = now(), updated_at = now(),
-         ${channel}_verified_at = coalesce(${channel}_verified_at, now()) WHERE id = $1`, [user.id, hash]);
+      `UPDATE users SET password_hash = $2, password_changed_at = now(), updated_at = now()
+         ${channel ? `, ${channel}_verified_at = coalesce(${channel}_verified_at, now())` : ''} WHERE id = $1`, [user.id, hash]);
     await db.query('UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL', [user.id]);
     await audit(db, req, { actorId: user.id, action: 'auth.password_reset', targetType: 'user', targetId: user.id });
   });
@@ -411,4 +418,13 @@ export async function me(app, req) {
     },
     businesses,
   };
+}
+
+// A one-time password reset link for someone on the team, made by the owner
+// (or a manager with permission) to send them on WhatsApp or by hand.
+// It works once, for 24 hours, and signs the person out everywhere.
+export async function issueResetLink(app, db, userId) {
+  const token = randomToken();
+  await issueToken(db, userId, 'password_reset', token, { target: 'link', minutes: 24 * 60 });
+  return { link: `${app.config.appUrl}/#/reset?token=${token}`, expiresAt: new Date(Date.now() + 24 * 3600e3).toISOString() };
 }

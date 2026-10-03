@@ -37,9 +37,12 @@ export function loadConfig(env = process.env) {
     jobs: bool(env.RUN_JOBS, true),
     rateLimitPerMinute: Number(env.RATE_LIMIT_PER_MINUTE) || 600,
     messaging: {
-      // 'log' prints messages to the server log (development only).
-      email: env.EMAIL_TRANSPORT || 'log',
-      sms: env.SMS_TRANSPORT || 'log',
+      // 'none': nothing is sent (no cost). Invitations and password resets
+      // are then shared as links by the owner or a manager (WhatsApp, copy).
+      // 'smtp' / 'twilio' send for real; 'log' prints to the server log
+      // (development only).
+      email: env.EMAIL_TRANSPORT || (production ? 'none' : 'log'),
+      sms: env.SMS_TRANSPORT || (production ? 'none' : 'log'),
       emailFrom: env.EMAIL_FROM || 'Workforce <no-reply@localhost>',
       smtpUrl: env.SMTP_URL || '',
       twilioSid: env.TWILIO_ACCOUNT_SID || '',
@@ -54,7 +57,7 @@ export function loadConfig(env = process.env) {
       throw new Error('APP_ENCRYPTION_KEY must be 32 random bytes encoded as base64');
     }
     if (config.messaging.email === 'log' || config.messaging.sms === 'log') {
-      throw new Error('Configure real EMAIL_TRANSPORT and SMS_TRANSPORT in production');
+      throw new Error('EMAIL_TRANSPORT and SMS_TRANSPORT must be smtp/twilio or none in production');
     }
   }
   if (!config.encryptionKey) {
@@ -63,3 +66,6 @@ export function loadConfig(env = process.env) {
   }
   return config;
 }
+
+// Whether a channel actually delivers anything ('none' means links are shared by hand).
+export const channelOn = (config, channel) => config.messaging[channel] !== 'none';

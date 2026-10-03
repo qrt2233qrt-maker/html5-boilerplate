@@ -6,13 +6,13 @@ import { migrate } from '../server/db/migrate.js';
 export const TEST_DB = process.env.TEST_DATABASE_URL || 'postgres://postgres@localhost:5432/workforce_test';
 
 // Fresh schema, real Postgres, captured email/SMS.
-export async function setup() {
+export async function setup(env = {}) {
   const pool = new pg.Pool({ connectionString: TEST_DB, max: 5 });
   await pool.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
   await migrate(pool);
   const sent = [];
   const capture = async (msg) => { sent.push({ ...msg }); };
-  const config = loadConfig({ NODE_ENV: 'test', DATABASE_URL: TEST_DB, APP_URL: 'http://app.test' });
+  const config = loadConfig({ NODE_ENV: 'test', DATABASE_URL: TEST_DB, APP_URL: 'http://app.test', ...env });
   const app = await buildApp(config, { pool, logger: process.env.TEST_LOG ? { level: 'error' } : false, transports: { email: capture, sms: capture } });
   return {
     app,

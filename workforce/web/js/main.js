@@ -273,7 +273,8 @@ onUnauthorized(() => {
 async function boot() {
   applyLang();
   try {
-    await loadMe();
+    const [, server] = await Promise.all([loadMe(), api.get('/api/config').catch(() => null)]);
+    S.server = server;
   } catch {
     mount(root(), html`<div class="boot"><div class="empty"><b>${t('e.network')}</b><button class="btn" type="button" id="boot-retry">${t('retry')}</button></div></div>`);
     $('#boot-retry').onclick = () => location.reload();

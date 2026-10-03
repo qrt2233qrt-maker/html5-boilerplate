@@ -55,8 +55,16 @@ Everything is in [`.env.example`](../.env.example). The ones that matter most:
 | `APP_URL` | The public `https://` address. Used in links in emails and SMS. |
 | `APP_ENCRYPTION_KEY` | 32 random bytes, base64. Encrypts 2FA secrets and personal details. **Back it up separately from the database**: a backup without the key can't decrypt those fields, and a leaked key with a backup can. |
 | `DATABASE_URL` | PostgreSQL connection string. Use a role that owns only this database. |
-| `EMAIL_TRANSPORT`, `SMTP_URL`, `EMAIL_FROM` | SMTP for invitations, codes and notifications. |
-| `SMS_TRANSPORT`, `TWILIO_*` | SMS codes and urgent notifications. |
+| `EMAIL_TRANSPORT`, `SMTP_URL`, `EMAIL_FROM` | `none` (default, free) or `smtp`. With `none`, nothing is emailed: invitations and password resets are links you share yourself (WhatsApp, copy), and notifications stay in the app. |
+| `SMS_TRANSPORT`, `TWILIO_*` | `none` (default, free) or `twilio` for SMS codes and urgent notifications. |
+
+**Without email or SMS (free).** Invite someone from Team → Invite: the app
+shows their one-time link with a **Send on WhatsApp** button. If someone
+forgets their password, the owner (or a manager allowed to invite) opens
+Team → their name → **Password reset link** and sends it the same way. If the
+owner forgets theirs, whoever runs the server prints a link with
+`npm run reset-link -- <owner's phone or email>` (in Docker:
+`docker compose exec app npm run reset-link -- 0770…`).
 | `TRUST_PROXY` | `true` behind a proxy, so rate limits see real client addresses. |
 | `ALLOW_BUSINESS_SIGNUP` | Turn off once your business exists if the server is only for you. |
 | `UPLOAD_DIR`, `MAX_UPLOAD_MB` | Private file storage and the per-file limit (default 10 MB). |

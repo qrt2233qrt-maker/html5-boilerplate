@@ -1,3 +1,4 @@
+import { channelOn } from '../config.js';
 import * as auth from '../services/auth.js';
 import * as team from '../services/team.js';
 import { clearSessionCookie, requireUser } from '../auth/session.js';
@@ -103,6 +104,10 @@ export default async function authRoutes(app) {
   });
 
   // Invitations, from the invitee's side.
+  // What this server can send, so screens offer links instead of codes when it can't.
+  app.get('/api/config', async () => ({
+    email: channelOn(app.config, 'email'), sms: channelOn(app.config, 'sms'), signup: app.config.allowBusinessSignup,
+  }));
   app.get('/api/invitations/:token', async (req) => team.previewInvitation(app, req, req.params.token));
   app.post('/api/invitations/accept', {
     schema: body({ token: str(100), name: str(120), password }, ['token']),

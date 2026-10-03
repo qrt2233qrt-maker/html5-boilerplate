@@ -16,7 +16,7 @@ and dark themes.
 
 | Area | What works |
 | --- | --- |
-| Accounts and access | Business sign-up creates the owner. Invitations (email or SMS) with a one-time link, so nobody shares passwords. Email and phone verification, sign-in with optional authenticator-app 2FA and recovery codes, device list and remote sign-out, password reset. 41 permissions the owner can turn on or off per role or per person; owner-only powers can't be delegated. |
+| Accounts and access | Business sign-up creates the owner. Invitations with a one-time link, so nobody shares passwords: sent on WhatsApp by you for free, or by email/SMS if you connect a provider. Forgotten passwords: a one-time reset link from the owner or manager. Email and phone verification, sign-in with optional authenticator-app 2FA and recovery codes, device list and remote sign-out, password reset. 41 permissions the owner can turn on or off per role or per person; owner-only powers can't be delegated. |
 | People | Profiles, departments with managers (a department manager sees only their people), locations, pay-rate history with effective dates, private documents, encrypted personal details and emergency contact. Make or remove a manager, suspend, end employment (cancels future shifts, keeps all history), archive, or permanently delete only when no records must be kept. |
 | Scheduling | Week grid with drafts and publishing, copy last week, open shifts, unavailability. Rules checked on every change: overlaps, rest between shifts, weekly hours, shift length, time off. Every change keeps history (who, when, why, before and after). |
 | Requests and swaps | Change and time-off requests, giving a shift away, and two-person swaps (colleague accepts, then a manager approves), each re-validated against the rules when approved. |
@@ -74,7 +74,7 @@ createdb workforce_test
 TEST_DATABASE_URL=postgres://localhost/workforce_test npm test
 ```
 
-84 tests cover sign-up, verification, sign-in, 2FA, sessions, CSRF and rate
+89 tests cover sign-up, verification, sign-in, 2FA, sessions, CSRF and rate
 limits; invitations, roles, permission overrides and attempts by employees
 and managers to call owner endpoints directly; department scoping and
 separation between businesses; schedule rules, swaps, requests and
@@ -93,8 +93,10 @@ Settings come from environment variables, or from a `.env` file next to
 `package.json` (never commit it). See [.env.example](.env.example) and
 [docs/DEPLOY.md](docs/DEPLOY.md).
 
-In production the server refuses to start without `APP_ENCRYPTION_KEY` and
-real email and SMS settings, so codes can't silently go nowhere.
+In production the server refuses to start without `APP_ENCRYPTION_KEY`.
+Email and SMS are optional (`none` by default, free): invitations and
+password resets are then links you send on WhatsApp. The development `log`
+setting, which only prints messages, isn't allowed in production.
 
 ## Layout
 

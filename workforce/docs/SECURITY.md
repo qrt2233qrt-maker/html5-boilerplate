@@ -67,6 +67,12 @@ contact the business owner running your server.
 - The position is read only when someone clocks in or out, never in between. Staff are told so on the clock-in screen. Each record keeps the position, its accuracy and the distance from the door; only people with attendance permission see the distance.
 - Positions are kept with the attendance record as evidence of where it happened. Nothing deletes them automatically yet; a scheduled clean-up after a set time can be added if you want one.
 
+### Without email or SMS
+
+- With `EMAIL_TRANSPORT=none` and `SMS_TRANSPORT=none` (the production default), nothing is sent and nothing costs money. The inviter gets the one-time invitation link to send themselves; opening it marks the email or phone they typed as the person's, so it must go only to that person.
+- The owner's contact isn't checked by a code at sign-up (there is nothing to send it with). Turn `ALLOW_BUSINESS_SIGNUP=false` once your business exists.
+- Forgot-password sends nothing and says the same thing whether or not the account exists. The owner, or a manager allowed to invite, makes a one-time reset link (24 hours, signs the person out everywhere, audited); only the owner can make one for a manager, and nobody for the owner, whose link comes from `npm run reset-link` on the server.
+
 ### Chat
 
 - Private chats are visible only to their two members. There is no owner or admin read access, and the API returns "not found" to anyone else.
@@ -100,7 +106,7 @@ commissioning before storing data for many businesses.
 
 - [ ] Served only over HTTPS, with `APP_URL` set to the `https://` address and `TRUST_PROXY=true` behind the proxy.
 - [ ] `APP_ENCRYPTION_KEY` generated freshly (32 random bytes), stored in a password manager **and** apart from database backups.
-- [ ] Real SMTP and SMS credentials configured, and a test invitation received on both.
+- [ ] Either email/SMS configured and a test invitation received, or both left at `none` and everyone who invites knows to send links only to the person's own WhatsApp.
 - [ ] `ALLOW_BUSINESS_SIGNUP=false` if the server is only for your business.
 - [ ] The database user owns only this database and isn't a superuser.
 - [ ] Backups running nightly, copied off the server, and one restore practised ([DEPLOY.md](DEPLOY.md#restoring)).

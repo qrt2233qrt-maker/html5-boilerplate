@@ -57,10 +57,10 @@ export default async function businessRoutes(app) {
   }, async (req, reply) => reply.code(201).send(await team.createInvitation(app, req, req.body)));
 
   app.post('/invitations/:id/resend', { preHandler: requirePermission('members.invite'), schema: { params: params({ id: uuid }) } },
-    async (req) => {
-      await team.resendInvitation(app, req, req.params.id);
-      return ok;
-    });
+    async (req) => ({ ...ok, ...(await team.resendInvitation(app, req, req.params.id)) }));
+
+  app.post('/members/:membershipId/reset-link', { preHandler: requirePermission('members.invite'), schema: { params: params({ membershipId: uuid }) } },
+    async (req) => team.memberResetLink(app, req, req.params.membershipId));
 
   app.post('/invitations/:id/revoke', { preHandler: requirePermission('members.invite'), schema: { params: params({ id: uuid }) } },
     async (req) => {

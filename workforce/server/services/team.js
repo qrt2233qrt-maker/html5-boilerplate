@@ -1,3 +1,5 @@
+import { channelOn } from '../config.js';
+import { issueResetLink } from './auth.js';
 import { transaction } from '../db/pool.js';
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
 import { audit } from '../lib/audit.js';
@@ -10,7 +12,7 @@ import { queueMessage } from '../messaging/outbox.js';
 import { render } from '../messaging/templates.js';
 import { createSession, can } from '../auth/session.js';
 import { PERMISSIONS, PERMISSION_KEYS, defaultAllowed, isOwnerOnly } from '../auth/permissions.js';
-import { managedScope, scopeSql } from '../lib/context.js';
+import { inScope, managedScope, scopeSql } from '../lib/context.js';
 import { currentPaySql } from './people.js';
 
 const PAY_FIELDS = ['payType', 'payRate', 'payFrequency'];
@@ -42,15 +44,23 @@ function publicInvitation(inv) {
   };
 }
 
+// Sends the invitation by email or SMS when the server has that service.
+// Either way the link comes back to the person inviting, to share it
+// themselves (WhatsApp, copy and paste) at no cost. Whoever opens it proves
+// they hold the email or phone the inviter chose, so share it only there.
 async function sendInvitation(app, db, req, inv, token) {
   const link = `${app.config.appUrl}/#/invite?token=${token}`;
   const locale = req.member.business.locale;
   const vars = { name: inv.name, business: req.member.business.name, role: inv.role, link, days: app.config.invitationDays };
-  if (inv.email) {
+  let sentBy = null;
+  if (inv.email && channelOn(app.config, 'email')) {
     await queueMessage(db, { channel: 'email', to: inv.email, ...render('invitation', locale, vars), sensitive: true });
-  } else {
+    sentBy = 'email';
+  } else if (inv.phone && channelOn(app.config, 'sms')) {
     await queueMessage(db, { channel: 'sms', to: inv.phone, ...render('invitationSms', locale, vars), sensitive: true });
+    sentBy = 'sms';
   }
+  return { link, sentBy, message: render('invitationSms', locale, vars).body };
 }
 
 export async function createInvitation(app, req, input) {
@@ -89,12 +99,12 @@ export async function createInvitation(app, req, input) {
       `INSERT INTO invitations (business_id, name, email, phone, role, profile, token_hash, invited_by, expires_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now() + ($9 || ' days')::interval) RETURNING *`,
       [businessId, input.name.trim(), email, phone, input.role, JSON.stringify(profile), sha256(token), req.auth.user.id, app.config.invitationDays]);
-    await sendInvitation(app, db, req, row, token);
-    await audit(db, req, { businessId, action: 'invitation.created', targetType: 'invitation', targetId: row.id, after: { name: row.name, email, phone, role: row.role } });
-    return row;
+    const share = await sendInvitation(app, db, req, row, token);
+    await audit(db, req, { businessId, action: 'invitation.created', targetType: 'invitation', targetId: row.id, after: { name: row.name, email, phone, role: row.role, sentBy: share.sentBy } });
+    return { row, share };
   });
   flush(app, req);
-  return publicInvitation(inv);
+  return { ...publicInvitation(inv.row), share: inv.share };
 }
 
 export async function listInvitations(app, req) {
@@ -115,17 +125,19 @@ async function loadInvitation(db, req, id) {
 export async function resendInvitation(app, req, id) {
   await rateLimit(app.db, `invite-resend:${id}`, 5, 86400);
   const token = randomToken();
-  await transaction(app.db, async (db) => {
+  const share = await transaction(app.db, async (db) => {
     const inv = await loadInvitation(db, req, id);
     if (inv.accepted_at || inv.revoked_at) throw conflict('invitation_closed', 'This invitation can no longer be sent.');
     // A new token replaces the old link, and the expiry restarts.
     const { rows: [row] } = await db.query(
       `UPDATE invitations SET token_hash = $2, last_sent_at = now(), expires_at = now() + ($3 || ' days')::interval
         WHERE id = $1 RETURNING *`, [id, sha256(token), app.config.invitationDays]);
-    await sendInvitation(app, db, req, row, token);
+    const out = await sendInvitation(app, db, req, row, token);
     await audit(db, req, { businessId: req.member.businessId, action: 'invitation.resent', targetType: 'invitation', targetId: id });
+    return out;
   });
   flush(app, req);
+  return { share };
 }
 
 export async function revokeInvitation(app, req, id) {
@@ -460,4 +472,20 @@ export async function listAuditLogs(app, req, { action, actorId, targetType, tar
     })),
     nextBefore: rows.length === params[params.length - 1] ? rows[rows.length - 1].id : null,
   };
+}
+
+// A one-time password reset link for someone who forgot their password,
+// to send them by hand. Only the owner can do this for managers.
+export async function memberResetLink(app, req, membershipId) {
+  return transaction(app.db, async (db) => {
+    const { rows: [m] } = await db.query(
+      'SELECT m.id, m.user_id, m.role, m.status FROM memberships m WHERE m.id = $1 AND m.business_id = $2', [membershipId, req.member.businessId]);
+    if (!m || !(await inScope(req, m.id))) throw notFound();
+    if (m.role === 'owner' || m.user_id === req.auth.user.id) throw forbidden('Change your own password from your account page.');
+    if (m.role === 'manager' && req.member.role !== 'owner') throw forbidden('Only the owner can do this for a manager.');
+    if (m.status !== 'active') throw conflict('member_inactive', 'This person isn\'t active in the business.');
+    const out = await issueResetLink(app, db, m.user_id);
+    await audit(db, req, { businessId: req.member.businessId, action: 'member.reset_link_created', targetType: 'membership', targetId: m.id });
+    return out;
+  });
 }

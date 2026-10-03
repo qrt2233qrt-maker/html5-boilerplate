@@ -37,7 +37,8 @@ export function createTransports(config, log) {
       if (!res.ok) throw new Error(`Twilio responded ${res.status}`);
     }
     : logTransport;
-  return { email, sms };
+  const none = async () => {};
+  return { email: m.email === 'none' ? none : email, sms: m.sms === 'none' ? none : sms };
 }
 
 export function createOutbox(pool, transports, log) {
