@@ -27,4 +27,17 @@ export default defineConfig([
       semi: ['error', 'always'],
     },
   },
+  {
+    // The workforce server runs on Node 22 and uses current syntax.
+    files: ['workforce/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+    },
+  },
+  {
+    // The frontend builds markup in multi-line template literals, which the
+    // (deprecated) core indent rule mis-measures.
+    files: ['workforce/web/**/*.js'],
+    rules: { indent: 'off' },
+  },
 ]);

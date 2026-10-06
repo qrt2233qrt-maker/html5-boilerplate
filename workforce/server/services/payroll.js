@@ -1,0 +1,560 @@
+// Payroll runs (spec §6). Amounts are integer minor units; minutes are
+// integers. Calculation only happens while a run is a draft. A paid run is
+// locked; only the owner can reopen it to correct it, with a reason, and
+// every correction is kept (payroll_corrections and the activity log).
+import { transaction } from '../db/pool.js';
+import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
+import { auditB, business } from '../lib/context.js';
+import { notifyMember } from '../lib/notify.js';
+import { can } from '../auth/session.js';
+import { today } from './finance.js';
+
+const iso = (d) => (d instanceof Date ? d.toISOString().slice(0, 10) : d);
+const addDays = (s, n) => new Date(Date.parse(s) + n * 86400000).toISOString().slice(0, 10);
+const weekday = (s) => new Date(`${s}T00:00:00Z`).getUTCDay();
+
+// Start of the business week containing `day`.
+export function weekStart(day, weekStartsOn) {
+  return addDays(day, -((weekday(day) - weekStartsOn + 7) % 7));
+}
+
+// Pay period containing `day` for a frequency.
+export function periodFor(day, { frequency, weekStartsOn }) {
+  if (frequency === 'daily') return [day, day];
+  if (frequency === 'monthly') {
+    const start = `${day.slice(0, 7)}-01`;
+    const [y, m] = day.split('-').map(Number);
+    const end = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+    return [start, end];
+  }
+  const ws = weekStart(day, weekStartsOn);
+  if (frequency === 'weekly') return [ws, addDays(ws, 6)];
+  // Two-week periods counted from a fixed anchor week so they never shift.
+  const anchor = weekStart('2024-01-01', weekStartsOn);
+  const weeks = Math.floor((Date.parse(ws) - Date.parse(anchor)) / (7 * 86400000));
+  const start = addDays(ws, -7 * (((weeks % 2) + 2) % 2));
+  return [start, addDays(start, 13)];
+}
+
+const daysInMonth = (day) => { const [y, m] = day.split('-').map(Number); return new Date(Date.UTC(y, m, 0)).getUTCDate(); };
+function* eachDay(from, to) { for (let d = from; d <= to; d = addDays(d, 1)) yield d; }
+
+// Recomputes generated lines (base, overtime, trips, reimbursements) for a
+// draft run. Each day belongs to the pay frequency of the rate in force that
+// day, and a day already paid by another run is never paid again, so people
+// can move between daily, weekly and monthly pay at any time.
+async function calculate(db, biz, run, actorId) {
+  const cfg = biz.settings.payroll;
+  const start = iso(run.period_start);
+  const end = iso(run.period_end);
+  await db.query('UPDATE employee_expenses SET payroll_run_id = NULL WHERE payroll_run_id = $1', [run.id]);
+  await db.query('DELETE FROM payroll_items WHERE run_id = $1 AND generated', [run.id]);
+  await db.query('UPDATE payroll_statements SET days = \'{}\' WHERE run_id = $1', [run.id]);
+
+  // Everyone employed for at least part of the period who has a pay rate.
+  const { rows: people } = await db.query(
+    `SELECT m.id, m.profile->>'startDate' AS start_date, m.end_date::text AS end_date FROM memberships m
+      WHERE m.business_id = $1 AND (m.status IN ('active', 'suspended') OR (m.status IN ('terminated', 'archived') AND m.end_date >= $2))
+        AND EXISTS (SELECT 1 FROM pay_rates p WHERE p.membership_id = m.id)`, [biz.id, start]);
+
+  for (const p of people) {
+    const { rows: rates } = await db.query(
+      `SELECT pay_type, rate, frequency, effective_from::text AS from_day FROM pay_rates WHERE membership_id = $1
+        ORDER BY effective_from DESC, created_at DESC`, [p.id]);
+    // Hours or trips recorded before someone's first pay rate (they started
+    // before being added to the app) are paid at that first rate. A salary
+    // only runs from its effective date.
+    const first = rates[rates.length - 1];
+    const { rows: workRows } = await db.query(
+      `SELECT DISTINCT (clock_in AT TIME ZONE $4)::date::text AS day FROM attendance
+        WHERE membership_id = $1 AND clock_out IS NOT NULL AND (clock_in AT TIME ZONE $4)::date BETWEEN $2 AND $3
+       UNION SELECT day::text FROM delivery_trips WHERE membership_id = $1 AND trips > 0 AND day BETWEEN $2 AND $3`,
+      [p.id, start, end, biz.timezone]);
+    const worked = new Set(workRows.map((w) => w.day));
+    const rateOn = (day) => rates.find((r) => r.from_day <= day)
+      || (first.pay_type !== 'salaried' && worked.has(day) ? first : null);
+    const { rows: [paid] } = await db.query(
+      `SELECT coalesce(array_agg(DISTINCT d::text), '{}') AS days FROM payroll_statements s, unnest(s.days) d
+        WHERE s.membership_id = $1 AND s.run_id <> $2 AND d BETWEEN $3 AND $4`, [p.id, run.id, start, end]);
+    const already = new Set(paid.days);
+    // The days this run pays for this person.
+    const owned = [];
+    for (const d of eachDay(start, end)) {
+      if (p.start_date && d < p.start_date) continue;
+      if (p.end_date && d > p.end_date) continue;
+      const r = rateOn(d);
+      if (r && (r.frequency || cfg.frequency) === run.frequency && !already.has(d)) owned.push(d);
+    }
+    if (!owned.length) continue;
+    const ownedSet = new Set(owned);
+    const items = [];
+
+    // Salary: the monthly amount spread over the days of each month.
+    let salary = 0;
+    for (const d of owned) { const r = rateOn(d); if (r.pay_type === 'salaried') salary += r.rate / daysInMonth(d); }
+    if (salary) items.push({ kind: 'base', amount: Math.round(salary), description: 'Salary' });
+
+    // Hours, from closed attendance on owned days, with weekly overtime.
+    // Minutes worked earlier in the same week (paid elsewhere) still count
+    // towards the weekly limit, so daily pay doesn't dodge overtime.
+    const { rows: days } = await db.query(
+      `SELECT (clock_in AT TIME ZONE $4)::date::text AS day,
+              sum(greatest(0, floor(extract(epoch FROM (clock_out - clock_in)) / 60) - break_minutes))::int AS minutes
+         FROM attendance WHERE membership_id = $1 AND clock_out IS NOT NULL
+          AND (clock_in AT TIME ZONE $4)::date BETWEEN $2 AND $3 GROUP BY 1 ORDER BY 1`,
+      [p.id, addDays(weekStart(start, cfg.weekStartsOn), 0), end, biz.timezone]);
+    const limit = cfg.overtimeWeeklyHours * 60;
+    const weekUsed = new Map();
+    let regMin = 0; let otMin = 0; let base = 0; let ot = 0;
+    for (const d of days) {
+      const wk = weekStart(d.day, cfg.weekStartsOn);
+      const used = weekUsed.get(wk) || 0;
+      weekUsed.set(wk, used + d.minutes);
+      const r = rateOn(d.day);
+      if (!ownedSet.has(d.day) || !r || r.pay_type !== 'hourly') continue;
+      const reg = Math.max(0, Math.min(d.minutes, limit - used));
+      const over = d.minutes - reg;
+      regMin += reg; otMin += over;
+      base += (r.rate * reg) / 60;
+      ot += (r.rate * cfg.overtimeMultiplier * over) / 60;
+    }
+    if (regMin) items.push({ kind: 'base', amount: Math.round(base), minutes: regMin, description: 'Hours worked' });
+    if (otMin) items.push({ kind: 'overtime', amount: Math.round(ot), minutes: otMin, description: `Overtime ×${cfg.overtimeMultiplier}` });
+
+    // Delivery trips entered by a manager, at the per-trip rate of each day.
+    const { rows: trips } = await db.query(
+      'SELECT day::text AS day, trips FROM delivery_trips WHERE membership_id = $1 AND day BETWEEN $2 AND $3', [p.id, start, end]);
+    let tripCount = 0; let tripPay = 0;
+    for (const tr of trips) {
+      const r = rateOn(tr.day);
+      if (!ownedSet.has(tr.day) || !r || r.pay_type !== 'per_trip') continue;
+      tripCount += tr.trips;
+      tripPay += tr.trips * r.rate;
+    }
+    if (tripCount) items.push({ kind: 'trips', amount: tripPay, quantity: tripCount, description: 'Delivery trips' });
+
+    // Regular monthly allowances and deductions, spread over the days paid.
+    const { rows: comps } = await db.query(
+      `SELECT id, kind, name, monthly_amount, starts_on::text AS starts_on, ends_on::text AS ends_on FROM pay_components
+        WHERE membership_id = $1 AND archived_at IS NULL AND starts_on <= $3 AND (ends_on IS NULL OR ends_on >= $2)`, [p.id, start, end]);
+    for (const c of comps) {
+      let amount = 0;
+      for (const d of owned) if (d >= c.starts_on && (!c.ends_on || d <= c.ends_on)) amount += Number(c.monthly_amount) / daysInMonth(d);
+      if (Math.round(amount)) items.push({ kind: c.kind, amount: Math.round(amount), description: c.name, componentId: c.id });
+    }
+
+    // Approved work expenses not yet repaid.
+    const { rows: claims } = await db.query(
+      `UPDATE employee_expenses SET payroll_run_id = $2 WHERE membership_id = $1 AND status = 'approved' AND payroll_run_id IS NULL
+          AND spent_on <= $3 RETURNING id, amount, description`, [p.id, run.id, end]);
+    for (const c of claims) items.push({ kind: 'reimbursement', amount: c.amount, description: c.description, expenseId: c.id });
+
+    // Salary advances: one instalment per payroll until repaid, counting
+    // what other payrolls already took back, and never more than this
+    // payroll leaves to pay (take-home pay doesn't go below zero).
+    if (owned.length) {
+      const { rows: advs } = await db.query(
+        `SELECT a.id, a.amount, a.instalment, a.note,
+                coalesce((SELECT sum(i.amount) FROM payroll_items i WHERE i.advance_id = a.id AND i.run_id <> $3), 0)::bigint AS repaid
+           FROM pay_advances a WHERE a.membership_id = $1 AND a.cancelled_at IS NULL AND a.given_on <= $2 ORDER BY a.given_on`, [p.id, end, run.id]);
+      let room = items.reduce((t, i) => t + (i.kind === 'deduction' ? -Number(i.amount) : Number(i.amount)), 0);
+      for (const a of advs) {
+        const left = Number(a.amount) - Number(a.repaid);
+        const take = Math.min(Number(a.instalment), left, Math.max(0, room));
+        if (take > 0) { items.push({ kind: 'advance', amount: take, description: a.note || 'Advance repayment', advanceId: a.id }); room -= take; }
+      }
+    }
+
+
+    for (const i of items) {
+      await db.query(
+        `INSERT INTO payroll_items (run_id, business_id, membership_id, kind, description, minutes, amount, generated, expense_id, created_by, quantity, advance_id, component_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8, $9, $10, $11, $12)`,
+        [run.id, biz.id, p.id, i.kind, i.description, i.minutes ?? null, i.amount, i.expenseId ?? null, actorId, i.quantity ?? null, i.advanceId ?? null, i.componentId ?? null]);
+    }
+    await db.query(
+      `INSERT INTO payroll_statements (run_id, membership_id, business_id, days) VALUES ($1, $2, $3, $4::date[])
+       ON CONFLICT (run_id, membership_id) DO UPDATE SET days = EXCLUDED.days`, [run.id, p.id, biz.id, owned]);
+  }
+  // People no longer paid by this run (moved to another frequency) drop out,
+  // unless someone added a bonus or deduction for them by hand.
+  await db.query(
+    `DELETE FROM payroll_statements s WHERE s.run_id = $1 AND cardinality(s.days) = 0
+        AND NOT EXISTS (SELECT 1 FROM payroll_items i WHERE i.run_id = s.run_id AND i.membership_id = s.membership_id)`, [run.id]);
+}
+
+// Per-person totals for a run.
+async function summary(db, runId, membershipId = null) {
+  const { rows } = await db.query(
+    `SELECT s.membership_id, s.status, s.review_note, s.paid_at, u.name,
+            coalesce(sum(i.minutes) FILTER (WHERE i.kind IN ('base', 'overtime')), 0)::int AS minutes,
+            coalesce(sum(i.minutes) FILTER (WHERE i.kind = 'overtime'), 0)::int AS overtime_minutes,
+            coalesce(sum(i.amount) FILTER (WHERE i.kind = 'base'), 0)::bigint AS base,
+            coalesce(sum(i.amount) FILTER (WHERE i.kind = 'overtime'), 0)::bigint AS overtime,
+            coalesce(sum(i.amount) FILTER (WHERE i.kind = 'trips'), 0)::bigint AS trips,
+            coalesce(sum(i.quantity) FILTER (WHERE i.kind = 'trips'), 0)::int AS trip_count,
+            coalesce(sum(i.amount) FILTER (WHERE i.kind = 'allowance'), 0)::bigint AS allowances,
+            coalesce(sum(i.amount) FILTER (WHERE i.kind = 'advance'), 0)::bigint AS advances,
+            coalesce(sum(i.amount) FILTER (WHERE i.kind = 'bonus'), 0)::bigint AS bonuses,
+            coalesce(sum(i.amount) FILTER (WHERE i.kind = 'adjustment'), 0)::bigint AS adjustments,
+            coalesce(sum(i.amount) FILTER (WHERE i.kind = 'deduction'), 0)::bigint AS deductions,
+            coalesce(sum(i.amount) FILTER (WHERE i.kind = 'reimbursement'), 0)::bigint AS reimbursements
+       FROM payroll_statements s JOIN memberships m ON m.id = s.membership_id JOIN users u ON u.id = m.user_id
+       LEFT JOIN payroll_items i ON i.run_id = s.run_id AND i.membership_id = s.membership_id
+      WHERE s.run_id = $1 AND ($2::uuid IS NULL OR s.membership_id = $2)
+      GROUP BY s.membership_id, s.status, s.review_note, s.paid_at, u.name ORDER BY u.name`, [runId, membershipId]);
+  return rows.map((r) => {
+    const gross = Number(r.base) + Number(r.overtime) + Number(r.trips) + Number(r.allowances) + Number(r.bonuses) + Number(r.adjustments);
+    return {
+      membershipId: r.membership_id, name: r.name, status: r.status, reviewNote: r.review_note, paidAt: r.paid_at,
+      hours: r.minutes / 60, overtimeHours: r.overtime_minutes / 60, base: Number(r.base), overtime: Number(r.overtime),
+      trips: Number(r.trips), tripCount: r.trip_count,
+      allowances: Number(r.allowances), advances: Number(r.advances),
+      bonuses: Number(r.bonuses), adjustments: Number(r.adjustments), deductions: Number(r.deductions), reimbursements: Number(r.reimbursements),
+      gross, net: gross + Number(r.reimbursements) - Number(r.deductions) - Number(r.advances),
+    };
+  });
+}
+
+const runOut = (r) => ({
+  id: r.id, frequency: r.frequency, periodStart: iso(r.period_start), periodEnd: iso(r.period_end), status: r.status,
+  finalizedAt: r.finalized_at, paidAt: r.paid_at, createdAt: r.created_at,
+});
+
+export async function listRuns(app, req) {
+  const { rows } = await app.db.query(
+    `SELECT r.*, (SELECT coalesce(sum(CASE WHEN kind IN ('deduction', 'advance') THEN -amount ELSE amount END), 0) FROM payroll_items i WHERE i.run_id = r.id)::bigint AS net,
+            (SELECT count(*) FROM payroll_statements s WHERE s.run_id = r.id)::int AS people
+       FROM payroll_runs r WHERE r.business_id = $1 ORDER BY r.period_end DESC, r.frequency LIMIT 300`, [req.member.businessId]);
+  return rows.map((r) => ({ ...runOut(r), net: Number(r.net), people: r.people }));
+}
+
+export async function getRun(app, req, id) {
+  const { rows: [r] } = await app.db.query('SELECT * FROM payroll_runs WHERE id = $1 AND business_id = $2', [id, req.member.businessId]);
+  if (!r) throw notFound();
+  const people = await summary(app.db, id);
+  const { rows: items } = await app.db.query(
+    `SELECT id, membership_id AS "membershipId", kind, description, minutes, quantity, amount, generated, expense_id AS "expenseId"
+       FROM payroll_items WHERE run_id = $1 ORDER BY membership_id, kind`, [id]);
+  const totals = people.reduce((t, p) => {
+    for (const k of ['base', 'overtime', 'trips', 'tripCount', 'allowances', 'advances', 'bonuses', 'adjustments', 'deductions', 'reimbursements', 'gross', 'net', 'hours']) t[k] = (t[k] || 0) + p[k];
+    return t;
+  }, {});
+  // Labour cost per section, and the same frequency's previous payroll.
+  const { rows: sections } = await app.db.query(
+    `SELECT d.name, coalesce(sum(i.amount) FILTER (WHERE i.kind IN ('base', 'overtime', 'trips', 'allowance', 'bonus', 'adjustment')), 0)::bigint AS gross,
+            count(DISTINCT s.membership_id)::int AS people
+       FROM payroll_statements s LEFT JOIN departments d ON d.id = s.department_id
+       LEFT JOIN payroll_items i ON i.run_id = s.run_id AND i.membership_id = s.membership_id
+      WHERE s.run_id = $1 GROUP BY d.name ORDER BY gross DESC`, [id]);
+  const { rows: [prev] } = await app.db.query(
+    `SELECT r.id, r.period_start, r.period_end,
+            (SELECT coalesce(sum(i.amount) FILTER (WHERE i.kind IN ('base', 'overtime', 'trips', 'allowance', 'bonus', 'adjustment')), 0) FROM payroll_items i WHERE i.run_id = r.id)::bigint AS gross,
+            (SELECT count(*) FROM payroll_statements s WHERE s.run_id = r.id)::int AS people
+       FROM payroll_runs r WHERE r.business_id = $1 AND r.frequency = $2 AND r.period_end < $3 ORDER BY r.period_end DESC LIMIT 1`,
+    [req.member.businessId, r.frequency, r.period_start]);
+  const { rows: corrections } = await app.db.query(
+    `SELECT c.reason, c.status_before AS "statusBefore", c.net_before AS "netBefore", c.net_after AS "netAfter", c.reopened_at AS "reopenedAt",
+            c.closed_at AS "closedAt", u.name AS "reopenedBy"
+       FROM payroll_corrections c LEFT JOIN users u ON u.id = c.reopened_by WHERE c.run_id = $1 ORDER BY c.reopened_at`, [id]);
+  return {
+    ...runOut(r), people, items, totals,
+    sections: sections.map((x) => ({ name: x.name, gross: Number(x.gross), people: x.people })),
+    previous: prev ? { id: prev.id, periodStart: iso(prev.period_start), periodEnd: iso(prev.period_end), gross: Number(prev.gross), people: prev.people,
+      change: Number(prev.gross) ? (totals.gross - Number(prev.gross)) / Number(prev.gross) : null } : null,
+    corrections: corrections.map((c) => ({ ...c, netBefore: Number(c.netBefore), netAfter: c.netAfter === null ? null : Number(c.netAfter) })),
+  };
+}
+
+// Opens (or returns) the run for the period containing `date`, for one pay
+// frequency (default: the business's). Each frequency has its own runs.
+export async function createRun(app, req, { date, frequency }) {
+  const biz = await business(req);
+  const day = date || (await today(app.db, biz));
+  const freq = frequency || biz.settings.payroll.frequency;
+  const [start, end] = periodFor(day, { ...biz.settings.payroll, frequency: freq });
+  const id = await transaction(app.db, async (db) => {
+    const { rows: [existing] } = await db.query(
+      'SELECT id FROM payroll_runs WHERE business_id = $1 AND frequency = $2 AND period_start = $3', [biz.id, freq, start]);
+    if (existing) return existing.id;
+    const { rows: [overlap] } = await db.query(
+      'SELECT 1 FROM payroll_runs WHERE business_id = $1 AND frequency = $2 AND period_start <= $4 AND period_end >= $3', [biz.id, freq, start, end]);
+    if (overlap) throw conflict('period_overlap', 'Another payroll already covers part of this period.');
+    const { rows: [run] } = await db.query(
+      'INSERT INTO payroll_runs (business_id, period_start, period_end, created_by, frequency) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [biz.id, start, end, req.auth.user.id, freq]);
+    await calculate(db, biz, run, req.auth.user.id);
+    await auditB(db, req, { action: 'payroll.run_created', targetType: 'payroll_run', targetId: run.id, after: { frequency: freq, periodStart: start, periodEnd: end } });
+    return run.id;
+  });
+  return getRun(app, req, id);
+}
+
+async function lockRun(db, req, id, statuses = ['draft']) {
+  const { rows: [r] } = await db.query('SELECT * FROM payroll_runs WHERE id = $1 AND business_id = $2 FOR UPDATE', [id, req.member.businessId]);
+  if (!r) throw notFound();
+  if (!statuses.includes(r.status)) {
+    throw conflict('run_locked', r.status === 'paid' ? 'This payroll is paid and locked. The owner can reopen it to correct it.' : 'Move this payroll back to draft first.');
+  }
+  return r;
+}
+
+export async function recalculate(app, req, id) {
+  const biz = await business(req);
+  await transaction(app.db, async (db) => {
+    const run = await lockRun(db, req, id);
+    await calculate(db, biz, run, req.auth.user.id);
+    await auditB(db, req, { action: 'payroll.recalculated', targetType: 'payroll_run', targetId: id });
+  });
+  return getRun(app, req, id);
+}
+
+export async function addItem(app, req, id, { membershipId, kind, amount, description }) {
+  if (kind !== 'adjustment' && amount <= 0) throw badRequest('invalid_amount', 'Enter an amount above zero.');
+  await transaction(app.db, async (db) => {
+    await lockRun(db, req, id);
+    const st = await db.query('SELECT 1 FROM payroll_statements WHERE run_id = $1 AND membership_id = $2', [id, membershipId]);
+    if (!st.rows[0]) {
+      const m = await db.query('SELECT 1 FROM memberships WHERE id = $1 AND business_id = $2', [membershipId, req.member.businessId]);
+      if (!m.rows[0]) throw notFound();
+      await db.query('INSERT INTO payroll_statements (run_id, membership_id, business_id) VALUES ($1, $2, $3)', [id, membershipId, req.member.businessId]);
+    }
+    const { rows: [i] } = await db.query(
+      `INSERT INTO payroll_items (run_id, business_id, membership_id, kind, description, amount, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`, [id, req.member.businessId, membershipId, kind, description, amount, req.auth.user.id]);
+    await auditB(db, req, { action: `payroll.${kind}_added`, targetType: 'payroll_run', targetId: id, after: { membershipId, amount, description, itemId: i.id } });
+  });
+  return getRun(app, req, id);
+}
+
+export async function removeItem(app, req, id, itemId) {
+  await transaction(app.db, async (db) => {
+    await lockRun(db, req, id);
+    const { rows: [i] } = await db.query('DELETE FROM payroll_items WHERE id = $1 AND run_id = $2 AND NOT generated RETURNING *', [itemId, id]);
+    if (!i) throw notFound('Only bonuses, deductions and adjustments you added can be removed.');
+    await auditB(db, req, { action: 'payroll.item_removed', targetType: 'payroll_run', targetId: id, before: { kind: i.kind, amount: i.amount, description: i.description } });
+  });
+  return getRun(app, req, id);
+}
+
+// Fixes the amounts. Employees can now see their statement as pending.
+export async function finalize(app, req, id) {
+  await transaction(app.db, async (db) => {
+    await lockRun(db, req, id);
+    await db.query('UPDATE payroll_runs SET status = \'finalized\', finalized_at = now() WHERE id = $1', [id]);
+    const people = await summary(db, id);
+    await db.query('UPDATE payroll_corrections SET net_after = $2, closed_at = now() WHERE run_id = $1 AND closed_at IS NULL',
+      [id, people.reduce((a, p) => a + p.net, 0)]);
+    for (const p of people) await notifyMember(db, req.member.businessId, p.membershipId, 'salary.pending', { runId: id, net: p.net });
+    await auditB(db, req, { action: 'payroll.finalized', targetType: 'payroll_run', targetId: id, after: { people: people.length, net: people.reduce((a, p) => a + p.net, 0) } });
+  });
+  return getRun(app, req, id);
+}
+
+// Back to draft. A finalized payroll nobody was paid from yet can go back
+// freely; once anyone is paid only the owner can reopen it, with a reason.
+export async function reopen(app, req, id, { reason } = {}) {
+  await transaction(app.db, async (db) => {
+    const run = await lockRun(db, req, id, ['finalized', 'paid']);
+    const paid = (await db.query('SELECT membership_id FROM payroll_statements WHERE run_id = $1 AND status = \'paid\'', [id])).rows;
+    if (run.status === 'paid' || paid.length) {
+      if (req.member.role !== 'owner') throw forbidden('Only the owner can reopen a payroll that was already paid.');
+      if (!reason?.trim()) throw badRequest('reason_required', 'Say why this payroll is being corrected.');
+      const before = await summary(db, id);
+      await db.query(
+        `INSERT INTO payroll_corrections (run_id, business_id, reason, status_before, net_before, reopened_by)
+         VALUES ($1, $2, $3, $4, $5, $6)`, [id, req.member.businessId, reason.trim(), run.status, before.reduce((a, p) => a + p.net, 0), req.auth.user.id]);
+      // Claims repaid by this payroll are owed again until it is paid again.
+      await db.query(`UPDATE employee_expenses SET status = 'approved', reimbursed_at = NULL, updated_at = now()
+        WHERE payroll_run_id = $1 AND status = 'reimbursed'`, [id]);
+      await db.query('UPDATE payroll_statements SET status = \'pending\', paid_at = NULL WHERE run_id = $1 AND status = \'paid\'', [id]);
+      await db.query('UPDATE payroll_runs SET status = \'draft\', finalized_at = NULL, paid_at = NULL, reopen_count = reopen_count + 1 WHERE id = $1', [id]);
+      for (const p of before) await notifyMember(db, req.member.businessId, p.membershipId, 'salary.correcting', { runId: id });
+      await auditB(db, req, { action: 'payroll.reopened_after_payment', targetType: 'payroll_run', targetId: id,
+        before: { status: run.status, people: before.map((p) => ({ membershipId: p.membershipId, net: p.net, status: p.status })) }, after: { reason: reason.trim() } });
+      return;
+    }
+    await db.query('UPDATE payroll_runs SET status = \'draft\', finalized_at = NULL WHERE id = $1', [id]);
+    await auditB(db, req, { action: 'payroll.reopened', targetType: 'payroll_run', targetId: id, after: reason ? { reason } : null });
+  });
+  return getRun(app, req, id);
+}
+
+// Flags one person's pay for review (shown to them as "Requires review").
+export async function setReview(app, req, id, membershipId, { review, note }) {
+  await transaction(app.db, async (db) => {
+    await lockRun(db, req, id, ['draft', 'finalized']);
+    const { rowCount } = await db.query(
+      'UPDATE payroll_statements SET status = $3, review_note = $4 WHERE run_id = $1 AND membership_id = $2 AND status <> \'paid\'',
+      [id, membershipId, review ? 'review' : 'pending', review ? note ?? null : null]);
+    if (!rowCount) throw notFound();
+    await auditB(db, req, { action: review ? 'payroll.flagged_for_review' : 'payroll.review_cleared', targetType: 'payroll_run', targetId: id, after: { membershipId, note } });
+  });
+  return getRun(app, req, id);
+}
+
+// Marks people paid. When everyone is paid the run locks.
+export async function markPaid(app, req, id, { membershipIds }) {
+  await transaction(app.db, async (db) => {
+    await lockRun(db, req, id, ['finalized']);
+    const params = [id];
+    let cond = '';
+    if (membershipIds?.length) { params.push(membershipIds); cond = 'AND membership_id = ANY($2::uuid[])'; }
+    const { rows: blocked } = await db.query(`SELECT 1 FROM payroll_statements WHERE run_id = $1 AND status = 'review' ${cond}`, params);
+    if (blocked[0]) throw conflict('needs_review', 'Clear the review flag before marking this pay as paid.');
+    const { rows: paid } = await db.query(
+      `UPDATE payroll_statements SET status = 'paid', paid_at = now() WHERE run_id = $1 AND status = 'pending' ${cond} RETURNING membership_id`, params);
+    for (const p of paid) {
+      await db.query(
+        `UPDATE employee_expenses SET status = 'reimbursed', reimbursed_at = now(), updated_at = now()
+          WHERE payroll_run_id = $1 AND membership_id = $2 AND status = 'approved'`, [id, p.membership_id]);
+      const [s] = await summary(db, id, p.membership_id);
+      await notifyMember(db, req.member.businessId, p.membership_id, 'salary.paid', { runId: id, net: s.net });
+    }
+    const left = await db.query('SELECT 1 FROM payroll_statements WHERE run_id = $1 AND status <> \'paid\'', [id]);
+    if (!left.rows[0]) await db.query('UPDATE payroll_runs SET status = \'paid\', paid_at = now() WHERE id = $1', [id]);
+    await auditB(db, req, { action: 'payroll.paid', targetType: 'payroll_run', targetId: id, after: { people: paid.length, runLocked: !left.rows[0] } });
+  });
+  return getRun(app, req, id);
+}
+
+// Employee pay page: the latest statement and history (spec §6). Drafts stay hidden.
+export async function myPay(app, req, membershipId = req.member.id) {
+  if (membershipId !== req.member.id && !can(req, 'payroll.view')) throw forbidden();
+  if (membershipId === req.member.id && !can(req, 'self.pay')) throw forbidden();
+  const { rows: runs } = await app.db.query(
+    `SELECT r.* FROM payroll_runs r JOIN payroll_statements s ON s.run_id = r.id
+      WHERE r.business_id = $1 AND s.membership_id = $2 AND r.status IN ('finalized', 'paid') ORDER BY r.period_start DESC LIMIT 60`,
+    [req.member.businessId, membershipId]);
+  const history = [];
+  for (const r of runs) {
+    const [s] = await summary(app.db, r.id, membershipId);
+    history.push({ ...runOut(r), ...s, runStatus: r.status });
+  }
+  return { current: history[0] || null, history };
+}
+
+// ---------- payslip ----------
+
+// One person's payslip: every line, the days it covers with hours and trips
+// worked each day, and totals for the year so far. Employees see their own
+// once the payroll is finalized.
+export async function payslip(app, req, runId, membershipId) {
+  const own = membershipId === req.member.id;
+  if (!own && !can(req, 'payroll.view')) throw forbidden();
+  const biz = await business(req);
+  const { rows: [r] } = await app.db.query('SELECT * FROM payroll_runs WHERE id = $1 AND business_id = $2', [runId, biz.id]);
+  if (!r || (!can(req, 'payroll.view') && r.status === 'draft')) throw notFound();
+  const [s] = await summary(app.db, runId, membershipId);
+  if (!s) throw notFound();
+  const { rows: st } = await app.db.query(
+    `SELECT s.days::text[] AS days, d.name AS department, u.name, m.profile->>'jobTitle' AS job_title, m.profile->>'employeeNumber' AS number
+       FROM payroll_statements s JOIN memberships m ON m.id = s.membership_id JOIN users u ON u.id = m.user_id
+       LEFT JOIN departments d ON d.id = s.department_id WHERE s.run_id = $1 AND s.membership_id = $2`, [runId, membershipId]);
+  const { rows: lines } = await app.db.query(
+    `SELECT kind, description, minutes, quantity, amount FROM payroll_items WHERE run_id = $1 AND membership_id = $2
+      ORDER BY array_position(ARRAY['base','overtime','trips','allowance','bonus','adjustment','reimbursement','deduction','advance'], kind), description`, [runId, membershipId]);
+  const days = (st[0]?.days || []).sort();
+  const { rows: worked } = await app.db.query(
+    `SELECT (clock_in AT TIME ZONE $3)::date::text AS day,
+            sum(greatest(0, floor(extract(epoch FROM (clock_out - clock_in)) / 60) - break_minutes))::int AS minutes
+       FROM attendance WHERE membership_id = $1 AND clock_out IS NOT NULL AND (clock_in AT TIME ZONE $3)::date = ANY($2::date[]) GROUP BY 1`,
+    [membershipId, days, biz.timezone]);
+  const { rows: trips } = await app.db.query('SELECT day::text AS day, trips FROM delivery_trips WHERE membership_id = $1 AND day = ANY($2::date[])', [membershipId, days]);
+  const year = iso(r.period_end).slice(0, 4);
+  const { rows: [ytd] } = await app.db.query(
+    `SELECT coalesce(sum(CASE WHEN i.kind IN ('deduction', 'advance') THEN -i.amount ELSE i.amount END), 0)::bigint AS net,
+            coalesce(sum(i.amount) FILTER (WHERE i.kind IN ('base', 'overtime', 'trips', 'allowance', 'bonus', 'adjustment')), 0)::bigint AS gross
+       FROM payroll_runs x JOIN payroll_items i ON i.run_id = x.id
+      WHERE x.business_id = $1 AND i.membership_id = $2 AND x.status IN ('finalized', 'paid') AND extract(year FROM x.period_end) = $3 AND x.period_end <= $4`,
+    [biz.id, membershipId, Number(year), r.period_end]);
+  const { rows: advances } = await app.db.query(
+    `SELECT a.amount, (SELECT coalesce(sum(i.amount), 0) FROM payroll_items i JOIN payroll_runs x ON x.id = i.run_id
+                        WHERE i.advance_id = a.id AND x.status IN ('finalized', 'paid'))::bigint AS repaid
+       FROM pay_advances a WHERE a.membership_id = $1 AND a.cancelled_at IS NULL`, [membershipId]);
+  return {
+    business: biz.name, run: runOut(r), person: { membershipId, name: st[0]?.name, jobTitle: st[0]?.job_title, number: st[0]?.number, department: st[0]?.department },
+    summary: s, lines: lines.map((l) => ({ ...l, amount: Number(l.amount) })),
+    days: days.map((d) => ({ day: d, minutes: worked.find((w) => w.day === d)?.minutes ?? 0, trips: trips.find((x) => x.day === d)?.trips ?? 0 })),
+    yearToDate: { year, gross: Number(ytd.gross), net: Number(ytd.net) },
+    advanceLeft: advances.reduce((a, x) => a + Math.max(0, Number(x.amount) - Number(x.repaid)), 0),
+  };
+}
+
+// ---------- regular allowances / deductions and advances ----------
+
+const compOut = (c) => ({ id: c.id, kind: c.kind, name: c.name, monthlyAmount: Number(c.monthly_amount), startsOn: iso(c.starts_on), endsOn: c.ends_on ? iso(c.ends_on) : null, archivedAt: c.archived_at });
+
+async function ownMember(db, req, membershipId) {
+  const { rows: [m] } = await db.query('SELECT id FROM memberships WHERE id = $1 AND business_id = $2', [membershipId, req.member.businessId]);
+  if (!m) throw notFound();
+}
+
+export async function listComponents(app, req, membershipId) {
+  await ownMember(app.db, req, membershipId);
+  const { rows } = await app.db.query('SELECT * FROM pay_components WHERE membership_id = $1 ORDER BY archived_at NULLS FIRST, starts_on DESC', [membershipId]);
+  return rows.map(compOut);
+}
+
+export async function addComponent(app, req, membershipId, { kind, name, monthlyAmount, startsOn, endsOn }) {
+  return transaction(app.db, async (db) => {
+    await ownMember(db, req, membershipId);
+    if (endsOn && endsOn < startsOn) throw badRequest('invalid_dates', 'The end date is before the start date.');
+    const { rows: [c] } = await db.query(
+      `INSERT INTO pay_components (business_id, membership_id, kind, name, monthly_amount, starts_on, ends_on, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`, [req.member.businessId, membershipId, kind, name.trim(), monthlyAmount, startsOn, endsOn ?? null, req.auth.user.id]);
+    await auditB(db, req, { action: `payroll.${kind}_set`, targetType: 'membership', targetId: membershipId, after: compOut(c) });
+    return compOut(c);
+  });
+}
+
+export async function endComponent(app, req, membershipId, id) {
+  return transaction(app.db, async (db) => {
+    const { rows: [c] } = await db.query(
+      'UPDATE pay_components SET archived_at = now() WHERE id = $1 AND membership_id = $2 AND business_id = $3 AND archived_at IS NULL RETURNING *',
+      [id, membershipId, req.member.businessId]);
+    if (!c) throw notFound();
+    await auditB(db, req, { action: `payroll.${c.kind}_removed`, targetType: 'membership', targetId: membershipId, before: compOut(c) });
+    return { ok: true };
+  });
+}
+
+const advOut = (a) => ({
+  id: a.id, membershipId: a.membership_id, name: a.name, amount: Number(a.amount), instalment: Number(a.instalment), givenOn: iso(a.given_on), note: a.note,
+  repaid: Number(a.repaid ?? 0), left: Math.max(0, Number(a.amount) - Number(a.repaid ?? 0)), cancelledAt: a.cancelled_at,
+});
+const ADV_SELECT = `SELECT a.*, u.name, (SELECT coalesce(sum(i.amount), 0) FROM payroll_items i JOIN payroll_runs x ON x.id = i.run_id
+    WHERE i.advance_id = a.id AND x.status IN ('finalized', 'paid'))::bigint AS repaid
+  FROM pay_advances a JOIN memberships m ON m.id = a.membership_id JOIN users u ON u.id = m.user_id`;
+
+export async function listAdvances(app, req, membershipId = null) {
+  const { rows } = await app.db.query(`${ADV_SELECT} WHERE a.business_id = $1 AND ($2::uuid IS NULL OR a.membership_id = $2) ORDER BY a.given_on DESC`,
+    [req.member.businessId, membershipId]);
+  return rows.map(advOut);
+}
+
+export async function addAdvance(app, req, membershipId, { amount, instalment, givenOn, note }) {
+  if (instalment > amount) throw badRequest('invalid_instalment', 'Each repayment can\'t be more than the advance.');
+  return transaction(app.db, async (db) => {
+    await ownMember(db, req, membershipId);
+    const { rows: [a] } = await db.query(
+      `INSERT INTO pay_advances (business_id, membership_id, amount, instalment, given_on, note, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`, [req.member.businessId, membershipId, amount, instalment, givenOn, note ?? null, req.auth.user.id]);
+    await auditB(db, req, { action: 'payroll.advance_given', targetType: 'membership', targetId: membershipId, after: { amount, instalment, givenOn, note } });
+    await notifyMember(db, req.member.businessId, membershipId, 'salary.advance', { amount, instalment });
+    const { rows: [out] } = await db.query(`${ADV_SELECT} WHERE a.id = $1`, [a.id]);
+    return advOut(out);
+  });
+}
+
+// Stops future repayments (e.g. forgiven). What was already repaid stays.
+export async function cancelAdvance(app, req, id) {
+  return transaction(app.db, async (db) => {
+    const { rows: [a] } = await db.query(
+      'UPDATE pay_advances SET cancelled_at = now(), cancelled_by = $3 WHERE id = $1 AND business_id = $2 AND cancelled_at IS NULL RETURNING *',
+      [id, req.member.businessId, req.auth.user.id]);
+    if (!a) throw notFound();
+    await auditB(db, req, { action: 'payroll.advance_cancelled', targetType: 'membership', targetId: a.membership_id, before: { amount: Number(a.amount) } });
+    return { ok: true };
+  });
+}
