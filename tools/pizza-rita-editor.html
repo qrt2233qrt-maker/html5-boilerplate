@@ -108,14 +108,28 @@ const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2
 const cur = () => (data && data.settings && data.settings.currency) || "";
 const money = n => (Number(n) || 0).toLocaleString("en-US") + " " + cur();
 const catName = id => (data.cats.find(c => c.id === id) || {}).name || "—";
-function confirmDel(what) { return confirm("Delete " + what + "?"); }
+// In-page dialog (browser alert/confirm are blocked inside some embedded viewers).
+function ask(msg, okText = "OK", cancelText = "Cancel") {
+  return new Promise(res => {
+    const d = el("dialog", { class: "card", style: "max-width:420px;color:var(--ink);background:var(--card)" });
+    const done = v => { d.close(); d.remove(); res(v); };
+    d.append(el("p", { dir: "auto", style: "white-space:pre-line;margin-top:0" }, msg),
+      el("div", { class: "row", style: "justify-content:flex-end" },
+        cancelText ? el("button", { onclick: () => done(false) }, cancelText) : null,
+        el("button", { class: "primary", onclick: () => done(true) }, okText)));
+    d.addEventListener("cancel", e => { e.preventDefault(); done(false); });
+    document.body.append(d); d.showModal();
+  });
+}
+const tell = msg => ask(msg, "OK", null);
+const confirmDel = what => ask("Delete " + what + "?", "Delete");
 
 /* ---------- load / save ---------- */
 function load(text, name) {
   let d;
-  try { d = JSON.parse(text); } catch (e) { alert("That file isn't valid JSON:\n" + e.message); return; }
+  try { d = JSON.parse(text); } catch (e) { tell("That file isn't valid JSON:\n" + e.message); return; }
   if (!d || typeof d !== "object" || !d.settings || !Array.isArray(d.items)) {
-    alert("This doesn't look like a Pizza Rita backup (missing settings or items)."); return;
+    tell("This doesn't look like a Pizza Rita backup (missing settings or items)."); return;
   }
   for (const k of ["cats", "items", "extras", "tables", "users", "orders"]) if (!Array.isArray(d[k])) d[k] = [];
   data = d; fileName = name || "pizza-rita-backup.json"; changes = 0;
@@ -123,18 +137,25 @@ function load(text, name) {
   test = { type: "away", lines: [], discType: "none", discVal: 0, cat: (data.cats[0] || {}).id };
   render();
 }
-$("#file").addEventListener("change", e => {
+$("#file").addEventListener("change", async e => {
   const f = e.target.files[0]; if (!f) return;
-  if (changes && !confirm("You have unsaved changes. Open another file anyway?")) return;
+  if (changes && !(await ask("You have unsaved changes. Open another file anyway?", "Open anyway"))) { e.target.value = ""; return; }
   f.text().then(t => load(t, f.name)); e.target.value = "";
 });
-$("#save").addEventListener("click", () => {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-  const base = fileName.replace(/\.json$/i, "").replace(/_edited(-\d+)?$/, "");
-  const a = el("a", { href: URL.createObjectURL(blob), download: base + "_edited.json" });
-  document.body.append(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-  changes = 0; $("#dirty").textContent = "Saved " + base + "_edited.json";
+let downloads = null;
+if (window.claude && window.claude.use) window.claude.use("downloads").then(d => { downloads = d; }).catch(() => {});
+$("#save").addEventListener("click", async () => {
+  const text = JSON.stringify(data, null, 2);
+  const name = fileName.replace(/\.json$/i, "").replace(/_edited(-\d+)?$/, "") + "_edited.json";
+  if (downloads) {
+    try { await downloads.save({ filename: name, data: text }); }
+    catch (e) { if (e && e.code !== "declined") tell("Couldn't save the file (" + (e.code || e) + ")."); return; }
+  } else {
+    const a = el("a", { href: URL.createObjectURL(new Blob([text], { type: "application/json" })), download: name });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+  changes = 0; $("#dirty").textContent = "Saved " + name;
 });
 window.addEventListener("beforeunload", e => { if (changes) { e.preventDefault(); e.returnValue = ""; } });
 
@@ -151,11 +172,21 @@ function render() {
 function renderDrop() {
   const d = el("div", { class: "drop" },
     el("p", {}, el("b", {}, "Open your Pizza Rita backup (.json) to start.")),
+    el("button", { class: "primary", style: "font-size:17px;padding:10px 20px", onclick: () => $("#file").click() }, "Open backup"),
     el("p", { class: "muted small" }, "Drag the file here or use “Open backup”. The file stays on this device. Nothing is uploaded."));
+  const steps = [
+    "On the cashier PC: close all open orders, then make a fresh backup from the register. Keep that file untouched as your safety copy.",
+    "Open the fresh backup here with “Open backup”.",
+    "Make your changes in Menu, Categories, Extras, Tables, Users and Settings.",
+    "Use “Test order” to try the menu and see the total and receipt. Tests don't change anything.",
+    "Click “Save as JSON”. You get a new file ending in _edited.json.",
+    "On the cashier PC: restore that _edited.json file from the register's backup / restore screen.",
+    "Check a few prices and print one test order. If anything is wrong, restore your safety copy."];
+  app.append(d, el("div", { class: "card", style: "margin-top:14px" }, el("b", {}, "How to update your register"),
+    el("ol", {}, steps.map(t => el("li", { style: "margin:4px 0" }, t)))));
   d.addEventListener("dragover", e => { e.preventDefault(); d.classList.add("hover"); });
   d.addEventListener("dragleave", () => d.classList.remove("hover"));
   d.addEventListener("drop", e => { e.preventDefault(); d.classList.remove("hover"); const f = e.dataTransfer.files[0]; if (f) f.text().then(t => load(t, f.name)); });
-  app.append(d);
 }
 
 function viewMenu() {
@@ -203,7 +234,7 @@ function itemCard(it) {
       el("label", {}, bind(it, "kitchen", "bool"), "Send to kitchen"),
       el("span", { class: "grow" }),
       el("button", { onclick: () => { const c = JSON.parse(JSON.stringify(it)); c.id = newId(); c.name += " (نسخة)"; data.items.splice(data.items.indexOf(it) + 1, 0, c); touch(); render(); } }, "Duplicate"),
-      el("button", { class: "danger", onclick: () => { if (confirmDel("“" + it.name + "”")) { data.items.splice(data.items.indexOf(it), 1); touch(); render(); } } }, "Delete")),
+      el("button", { class: "danger", onclick: async () => { if (await confirmDel("“" + it.name + "”")) { data.items.splice(data.items.indexOf(it), 1); touch(); render(); } } }, "Delete")),
     el("div", { style: "margin-top:6px" }, el("span", { class: "muted small" }, "Sizes & prices"), sizes));
   return card;
 }
@@ -223,7 +254,7 @@ function viewCats() {
       bind(c, "name", "text", { attrs: { class: "grow", placeholder: "Arabic name" } }),
       bind(c, "en", "text", { attrs: { class: "grow", placeholder: "English name" } }),
       sec, el("span", { class: "pill" }, n + " items"),
-      el("button", { class: "danger", disabled: n > 0, title: n ? "Move or delete its items first" : "", onclick: () => { if (confirmDel("category “" + c.name + "”")) { data.cats.splice(idx, 1); delete sections[c.id]; touch(); render(); } } }, "Delete")));
+      el("button", { class: "danger", disabled: n > 0, title: n ? "Move or delete its items first" : "", onclick: async () => { if (await confirmDel("category “" + c.name + "”")) { data.cats.splice(idx, 1); delete sections[c.id]; touch(); render(); } } }, "Delete")));
   });
 }
 
@@ -237,7 +268,7 @@ function viewExtras() {
         bind(x, "name", "text", { attrs: { class: "grow", placeholder: "Name" } }),
         bind(x, "group", "text", { attrs: { class: "grow", placeholder: "Group" } }),
         bind(x, "price", "number"), el("span", { class: "muted small" }, cur()),
-        el("button", { class: "danger", onclick: () => { if (confirmDel("“" + x.name + "”")) { data.extras.splice(data.extras.indexOf(x), 1); touch(); render(); } } }, "Delete")),
+        el("button", { class: "danger", onclick: async () => { if (await confirmDel("“" + x.name + "”")) { data.extras.splice(data.extras.indexOf(x), 1); touch(); render(); } } }, "Delete")),
       el("div", { class: "row small", style: "margin-top:6px" }, el("span", { class: "muted" }, "Shows for:"),
         data.cats.map(c => el("label", {}, el("input", { type: "checkbox", ...(x.cats.includes(c.id) ? { checked: true } : {}), onchange: e => {
           if (e.target.checked) x.cats.push(c.id); else x.cats.splice(x.cats.indexOf(c.id), 1); touch(); } }), c.name)))));
@@ -249,7 +280,7 @@ function viewTables() {
     el("button", { class: "primary", onclick: () => { data.tables.push({ id: newId(), name: "طاولة " + (data.tables.length + 1) }); touch(); render(); } }, "+ Add table")));
   data.tables.forEach((t, idx) => app.append(el("div", { class: "card row" },
     bind(t, "name", "text", { attrs: { class: "grow" } }),
-    el("button", { class: "danger", onclick: () => { if (confirmDel("“" + t.name + "”")) { data.tables.splice(idx, 1); touch(); render(); } } }, "Delete"))));
+    el("button", { class: "danger", onclick: async () => { if (await confirmDel("“" + t.name + "”")) { data.tables.splice(idx, 1); touch(); render(); } } }, "Delete"))));
 }
 
 function viewUsers() {
@@ -264,7 +295,7 @@ function viewUsers() {
       el("label", { class: "small" }, "Password", bind(u, "pass", "text", { attrs: { style: "width:110px" } })),
       el("label", {}, bind(u, "isAdmin", "bool", { after: render }), "Admin"),
       el("button", { class: "danger", disabled: u.isAdmin && admins <= 1, title: u.isAdmin && admins <= 1 ? "Keep at least one admin" : "",
-        onclick: () => { if (confirmDel("user “" + u.name + "”")) { data.users.splice(idx, 1); touch(); render(); } } }, "Delete")));
+        onclick: async () => { if (await confirmDel("user “" + u.name + "”")) { data.users.splice(idx, 1); touch(); render(); } } }, "Delete")));
   });
 }
 
@@ -388,8 +419,8 @@ function viewOrders() {
     el("select", { onchange: e => { ordFilter.day = e.target.value; render(); } }, el("option", { value: "" }, "All days"), days.map(d => el("option", { value: d, ...(ordFilter.day === d ? { selected: true } : {}) }, d))),
     el("span", { class: "muted small" }, shown.length + " shown · " + money(sum(shown.filter(o => o.status === "paid"))) + " paid"),
     el("span", { class: "grow" }),
-    el("button", { class: "danger", disabled: !shown.length, onclick: () => {
-      if (!confirm("Delete the " + shown.length + " orders shown? This only changes the edited copy you save.")) return;
+    el("button", { class: "danger", disabled: !shown.length, onclick: async () => {
+      if (!(await ask("Delete the " + shown.length + " orders shown? This only changes the edited copy you save.", "Delete"))) return;
       const del = new Set(shown); data.orders = O.filter(o => !del.has(o)); touch(); render();
     } }, "Delete shown")));
   const rows = shown.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 300);
