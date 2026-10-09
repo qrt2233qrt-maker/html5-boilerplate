@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pizza Rita Editor</title>
+<style>
+:root{
+  --bg:#f6f4f1;--card:#fff;--ink:#1f1b16;--muted:#6f675d;--line:#e3ddd5;
+  --accent:#c2410c;--accent-ink:#fff;--ok:#15803d;--bad:#b91c1c;--soft:#fbeee6;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#171411;--card:#221e1a;--ink:#f1ece6;--muted:#a59b8f;--line:#3a332c;
+  --accent:#f97316;--accent-ink:#1a0f06;--ok:#4ade80;--bad:#f87171;--soft:#3a2416;
+}}
+:root[data-theme="dark"]{
+  --bg:#171411;--card:#221e1a;--ink:#f1ece6;--muted:#a59b8f;--line:#3a332c;
+  --accent:#f97316;--accent-ink:#1a0f06;--ok:#4ade80;--bad:#f87171;--soft:#3a2416;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Tahoma,sans-serif}
+header{position:sticky;top:0;z-index:5;background:var(--card);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+header h1{font-size:17px;margin:0 auto 0 0}
+main{max-width:1000px;margin:0 auto;padding:16px}
+button,.btn{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:6px 12px;cursor:pointer}
+button.primary,.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.danger{color:var(--bad)}
+button:disabled{opacity:.5;cursor:default}
+input,select,textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:5px 8px;min-width:0}
+input[type=number]{width:100px}
+input[type=checkbox]{width:18px;height:18px;accent-color:var(--accent)}
+label{display:inline-flex;gap:6px;align-items:center}
+nav{display:flex;gap:4px;overflow-x:auto;margin-bottom:14px}
+nav button{white-space:nowrap}
+nav button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.grow{flex:1 1 160px}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+.pill{display:inline-block;background:var(--soft);border-radius:99px;padding:1px 8px;font-size:12px}
+.off{opacity:.55}
+.drop{border:2px dashed var(--line);border-radius:12px;padding:40px 16px;text-align:center}
+.drop.hover{border-color:var(--accent)}
+table{border-collapse:collapse;width:100%}
+th,td{border-bottom:1px solid var(--line);padding:6px;text-align:start;vertical-align:top}
+.scroll{overflow-x:auto}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:10px}
+.stat b{display:block;font-size:20px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:700px){.grid2{grid-template-columns:1fr}.grid2>.order{order:-1}}
+.menu-btn{display:block;width:100%;text-align:start;margin-bottom:6px}
+.receipt{background:#fff;color:#000;font:13px/1.4 "Courier New",monospace;padding:12px;margin:0 auto;border:1px solid #ccc;direction:rtl}
+.receipt .c{text-align:center}
+.receipt hr{border:0;border-top:1px dashed #000}
+fieldset{border:1px solid var(--line);border-radius:8px;margin:8px 0;padding:8px}
+legend{font-weight:600;padding:0 4px}
+.kv{display:grid;grid-template-columns:minmax(110px,180px) 1fr;gap:6px 10px;align-items:center}
+.kv input[type=text]{width:100%}
+#dirty{font-size:13px}
+[dir=auto]{unicode-bidi:plaintext}
+</style>
+</head>
+<body>
+<header>
+  <h1>🍕 Pizza Rita Editor</h1>
+  <span id="dirty" class="muted"></span>
+  <label class="btn">Open backup<input id="file" type="file" accept=".json,application/json" hidden></label>
+  <button id="save" class="primary" disabled>Save as JSON</button>
+</header>
+<main id="app"></main>
+
+<script>
+"use strict";
+let data = null, fileName = "", tab = "menu", changes = 0, catFilter = "all", search = "";
+let test = { type: "away", lines: [], discType: "none", discVal: 0, cat: null };
+const $ = (s, r = document) => r.querySelector(s);
+const app = $("#app");
+
+/* ---------- helpers ---------- */
+function el(tag, attrs = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else if (k === "class") e.className = v;
+    else if (v === true) e.setAttribute(k, "");
+    else if (v !== false && v != null) e.setAttribute(k, v);
+  }
+  for (const k of kids.flat()) if (k != null && k !== false) e.append(k instanceof Node ? k : document.createTextNode(k));
+  return e;
+}
+function touch() { changes++; $("#dirty").textContent = changes + " unsaved change" + (changes === 1 ? "" : "s"); }
+// Input bound to obj[key]; type: text | number | bool | textarea
+function bind(obj, key, type = "text", extra = {}) {
+  if (type === "bool") {
+    return el("input", { type: "checkbox", ...(obj[key] ? { checked: true } : {}), onchange: e => { obj[key] = e.target.checked; touch(); extra.after && extra.after(); }, ...extra.attrs });
+  }
+  const tagName = type === "textarea" ? "textarea" : "input";
+  const i = el(tagName, { type: type === "number" ? "number" : (type === "textarea" ? null : "text"), dir: "auto", ...extra.attrs });
+  i.value = obj[key] ?? "";
+  i.addEventListener("change", () => {
+    obj[key] = type === "number" ? (i.value === "" ? 0 : Number(i.value)) : i.value;
+    touch(); extra.after && extra.after();
+  });
+  return i;
+}
+const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const cur = () => (data && data.settings && data.settings.currency) || "";
+const money = n => (Number(n) || 0).toLocaleString("en-US") + " " + cur();
+const catName = id => (data.cats.find(c => c.id === id) || {}).name || "—";
+function confirmDel(what) { return confirm("Delete " + what + "?"); }
+
+/* ---------- load / save ---------- */
+function load(text, name) {
+  let d;
+  try { d = JSON.parse(text); } catch (e) { alert("That file isn't valid JSON:\n" + e.message); return; }
+  if (!d || typeof d !== "object" || !d.settings || !Array.isArray(d.items)) {
+    alert("This doesn't look like a Pizza Rita backup (missing settings or items)."); return;
+  }
+  for (const k of ["cats", "items", "extras", "tables", "users", "orders"]) if (!Array.isArray(d[k])) d[k] = [];
+  data = d; fileName = name || "pizza-rita-backup.json"; changes = 0;
+  $("#dirty").textContent = "Loaded " + fileName; $("#save").disabled = false;
+  test = { type: "away", lines: [], discType: "none", discVal: 0, cat: (data.cats[0] || {}).id };
+  render();
+}
+$("#file").addEventListener("change", e => {
+  const f = e.target.files[0]; if (!f) return;
+  if (changes && !confirm("You have unsaved changes. Open another file anyway?")) return;
+  f.text().then(t => load(t, f.name)); e.target.value = "";
+});
+$("#save").addEventListener("click", () => {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const base = fileName.replace(/\.json$/i, "").replace(/_edited(-\d+)?$/, "");
+  const a = el("a", { href: URL.createObjectURL(blob), download: base + "_edited.json" });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  changes = 0; $("#dirty").textContent = "Saved " + base + "_edited.json";
+});
+window.addEventListener("beforeunload", e => { if (changes) { e.preventDefault(); e.returnValue = ""; } });
+
+/* ---------- views ---------- */
+const TABS = [["menu", "Menu"], ["cats", "Categories"], ["extras", "Extras"], ["tables", "Tables"], ["users", "Users"], ["settings", "Settings"], ["test", "Test order"], ["orders", "Orders"]];
+
+function render() {
+  app.replaceChildren();
+  if (!data) return renderDrop();
+  app.append(el("nav", {}, TABS.map(([k, t]) => el("button", { class: tab === k ? "on" : "", onclick: () => { tab = k; render(); } }, t))));
+  ({ menu: viewMenu, cats: viewCats, extras: viewExtras, tables: viewTables, users: viewUsers, settings: viewSettings, test: viewTest, orders: viewOrders })[tab]();
+}
+
+function renderDrop() {
+  const d = el("div", { class: "drop" },
+    el("p", {}, el("b", {}, "Open your Pizza Rita backup (.json) to start.")),
+    el("p", { class: "muted small" }, "Drag the file here or use “Open backup”. The file stays on this device. Nothing is uploaded."));
+  d.addEventListener("dragover", e => { e.preventDefault(); d.classList.add("hover"); });
+  d.addEventListener("dragleave", () => d.classList.remove("hover"));
+  d.addEventListener("drop", e => { e.preventDefault(); d.classList.remove("hover"); const f = e.dataTransfer.files[0]; if (f) f.text().then(t => load(t, f.name)); });
+  app.append(d);
+}
+
+function viewMenu() {
+  const sel = el("select", { onchange: e => { catFilter = e.target.value; render(); } },
+    el("option", { value: "all" }, "All categories"),
+    data.cats.map(c => el("option", { value: c.id, ...(catFilter === c.id ? { selected: true } : {}) }, c.name + " (" + data.items.filter(i => i.catId === c.id).length + ")")));
+  const s = el("input", { type: "search", placeholder: "Search items…", dir: "auto", class: "grow" });
+  s.value = search;
+  s.addEventListener("input", () => { search = s.value; const p = s.selectionStart; render(); const n = $("input[type=search]"); n.focus(); n.setSelectionRange(p, p); });
+  const add = el("button", { class: "primary", onclick: () => {
+    const catId = catFilter !== "all" ? catFilter : (data.cats[0] || {}).id;
+    data.items.unshift({ id: newId(), active: true, catId, name: "صنف جديد", en: "", desc: "", kitchen: true, sizes: [{ name: "", price: 0 }] });
+    search = ""; touch(); render();
+  } }, "+ Add item");
+  app.append(el("div", { class: "row", style: "margin-bottom:10px" }, sel, s, add));
+
+  const q = search.trim().toLowerCase();
+  const list = data.items.filter(i => (catFilter === "all" || i.catId === catFilter) &&
+    (!q || (i.name + " " + i.en + " " + i.desc).toLowerCase().includes(q)));
+  if (!list.length) app.append(el("p", { class: "muted" }, "No items match."));
+  for (const it of list) app.append(itemCard(it));
+}
+
+function itemCard(it) {
+  if (!Array.isArray(it.sizes)) it.sizes = [];
+  const card = el("div", { class: "card" + (it.active ? "" : " off") });
+  const catSel = el("select", { onchange: e => { it.catId = e.target.value; touch(); } },
+    data.cats.map(c => el("option", { value: c.id, ...(c.id === it.catId ? { selected: true } : {}) }, c.name)));
+  const sizes = el("div");
+  const drawSizes = () => {
+    sizes.replaceChildren(...it.sizes.map((sz, idx) => el("div", { class: "row", style: "margin:4px 0" },
+      bind(sz, "name", "text", { attrs: { placeholder: "Size (blank = one size)", style: "width:170px" } }),
+      bind(sz, "price", "number"), el("span", { class: "muted small" }, cur()),
+      el("button", { class: "danger", title: "Remove size", onclick: () => { it.sizes.splice(idx, 1); touch(); drawSizes(); } }, "✕"))),
+      el("button", { class: "small", onclick: () => { it.sizes.push({ name: "", price: 0 }); touch(); drawSizes(); } }, "+ size"));
+  };
+  drawSizes();
+  card.append(
+    el("div", { class: "row" },
+      bind(it, "name", "text", { attrs: { class: "grow", placeholder: "Arabic name" } }),
+      bind(it, "en", "text", { attrs: { class: "grow", placeholder: "English name" } }), catSel),
+    el("div", { class: "row", style: "margin-top:6px" }, bind(it, "desc", "text", { attrs: { class: "grow", placeholder: "Description" } })),
+    el("div", { class: "row", style: "margin-top:6px" },
+      el("label", {}, bind(it, "active", "bool", { after: () => card.classList.toggle("off", !it.active) }), "On menu"),
+      el("label", {}, bind(it, "kitchen", "bool"), "Send to kitchen"),
+      el("span", { class: "grow" }),
+      el("button", { onclick: () => { const c = JSON.parse(JSON.stringify(it)); c.id = newId(); c.name += " (نسخة)"; data.items.splice(data.items.indexOf(it) + 1, 0, c); touch(); render(); } }, "Duplicate"),
+      el("button", { class: "danger", onclick: () => { if (confirmDel("“" + it.name + "”")) { data.items.splice(data.items.indexOf(it), 1); touch(); render(); } } }, "Delete")),
+    el("div", { style: "margin-top:6px" }, el("span", { class: "muted small" }, "Sizes & prices"), sizes));
+  return card;
+}
+
+function viewCats() {
+  app.append(el("div", { class: "row", style: "margin-bottom:10px" },
+    el("button", { class: "primary", onclick: () => { data.cats.push({ id: newId(), name: "قسم جديد", en: "" }); touch(); render(); } }, "+ Add category"),
+    el("span", { class: "muted small" }, "Use ▲▼ to change the order on the register.")));
+  data.cats.forEach((c, idx) => {
+    const n = data.items.filter(i => i.catId === c.id).length;
+    const move = d => { const j = idx + d; if (j < 0 || j >= data.cats.length) return; [data.cats[idx], data.cats[j]] = [data.cats[j], data.cats[idx]]; touch(); render(); };
+    const sections = data.settings.sections || (data.settings.sections = {});
+    const sec = el("select", { title: "Kitchen printer section", onchange: e => { if (e.target.value) sections[c.id] = e.target.value; else delete sections[c.id]; touch(); } },
+      ["", "A", "B", "C"].map(v => el("option", { value: v, ...((sections[c.id] || "") === v ? { selected: true } : {}) }, v ? "Section " + v : "No section")));
+    app.append(el("div", { class: "card row" },
+      el("button", { onclick: () => move(-1), disabled: idx === 0 }, "▲"), el("button", { onclick: () => move(1), disabled: idx === data.cats.length - 1 }, "▼"),
+      bind(c, "name", "text", { attrs: { class: "grow", placeholder: "Arabic name" } }),
+      bind(c, "en", "text", { attrs: { class: "grow", placeholder: "English name" } }),
+      sec, el("span", { class: "pill" }, n + " items"),
+      el("button", { class: "danger", disabled: n > 0, title: n ? "Move or delete its items first" : "", onclick: () => { if (confirmDel("category “" + c.name + "”")) { data.cats.splice(idx, 1); delete sections[c.id]; touch(); render(); } } }, "Delete")));
+  });
+}
+
+function viewExtras() {
+  app.append(el("div", { class: "row", style: "margin-bottom:10px" },
+    el("button", { class: "primary", onclick: () => { data.extras.unshift({ id: newId(), name: "إضافة جديدة", price: 0, group: "", cats: [] }); touch(); render(); } }, "+ Add extra")));
+  for (const x of data.extras) {
+    if (!Array.isArray(x.cats)) x.cats = [];
+    app.append(el("div", { class: "card" },
+      el("div", { class: "row" },
+        bind(x, "name", "text", { attrs: { class: "grow", placeholder: "Name" } }),
+        bind(x, "group", "text", { attrs: { class: "grow", placeholder: "Group" } }),
+        bind(x, "price", "number"), el("span", { class: "muted small" }, cur()),
+        el("button", { class: "danger", onclick: () => { if (confirmDel("“" + x.name + "”")) { data.extras.splice(data.extras.indexOf(x), 1); touch(); render(); } } }, "Delete")),
+      el("div", { class: "row small", style: "margin-top:6px" }, el("span", { class: "muted" }, "Shows for:"),
+        data.cats.map(c => el("label", {}, el("input", { type: "checkbox", ...(x.cats.includes(c.id) ? { checked: true } : {}), onchange: e => {
+          if (e.target.checked) x.cats.push(c.id); else x.cats.splice(x.cats.indexOf(c.id), 1); touch(); } }), c.name)))));
+  }
+}
+
+function viewTables() {
+  app.append(el("div", { class: "row", style: "margin-bottom:10px" },
+    el("button", { class: "primary", onclick: () => { data.tables.push({ id: newId(), name: "طاولة " + (data.tables.length + 1) }); touch(); render(); } }, "+ Add table")));
+  data.tables.forEach((t, idx) => app.append(el("div", { class: "card row" },
+    bind(t, "name", "text", { attrs: { class: "grow" } }),
+    el("button", { class: "danger", onclick: () => { if (confirmDel("“" + t.name + "”")) { data.tables.splice(idx, 1); touch(); render(); } } }, "Delete"))));
+}
+
+function viewUsers() {
+  app.append(el("div", { class: "row", style: "margin-bottom:10px" },
+    el("button", { class: "primary", onclick: () => { data.users.push({ id: newId(), name: "مستخدم جديد", login: "user" + (data.users.length + 1), pass: "", isAdmin: false }); touch(); render(); } }, "+ Add user"),
+    el("span", { class: "muted small" }, "Passwords are stored as plain text in the backup, so don't share the file.")));
+  data.users.forEach((u, idx) => {
+    const admins = data.users.filter(x => x.isAdmin).length;
+    app.append(el("div", { class: "card row" },
+      bind(u, "name", "text", { attrs: { class: "grow", placeholder: "Display name" } }),
+      el("label", { class: "small" }, "Login", bind(u, "login", "text", { attrs: { style: "width:120px" } })),
+      el("label", { class: "small" }, "Password", bind(u, "pass", "text", { attrs: { style: "width:110px" } })),
+      el("label", {}, bind(u, "isAdmin", "bool", { after: render }), "Admin"),
+      el("button", { class: "danger", disabled: u.isAdmin && admins <= 1, title: u.isAdmin && admins <= 1 ? "Keep at least one admin" : "",
+        onclick: () => { if (confirmDel("user “" + u.name + "”")) { data.users.splice(idx, 1); touch(); render(); } } }, "Delete")));
+  });
+}
+
+// Generic editor for the settings object: text, numbers, switches and nested groups.
+const LABELS = { name: "Shop name", en: "English name", phone: "Phone", address: "Address", currency: "Currency", servicePct: "Service %", deliveryFee: "Delivery fee",
+  watermark: "Watermark", printer: "Printer", printMode: "Print mode", footer: "Receipt footer", nextNo: "Next order no.", dayStart: "Day starts at (hour)",
+  receipt: "Receipt", kitchen: "Kitchen printing", drawer: "Cash drawer", width: "Width (mm)", font: "Font size", logoW: "Logo width", proverb: "Proverb", note: "Note", wm: "Watermark",
+  wmStrength: "Watermark strength", wmSize: "Watermark size", onPay: "Print on payment", auto: "Open automatically", pin: "Drawer pin" };
+const label = k => LABELS[k] || k.replace(/^show/, "Show ").replace(/([a-z])([A-Z])/g, "$1 $2");
+function settingsBlock(obj, skip = []) {
+  const kv = el("div", { class: "kv" }), groups = [];
+  for (const k of Object.keys(obj)) {
+    if (skip.includes(k)) continue;
+    const v = obj[k];
+    if (v && typeof v === "object" && !Array.isArray(v)) { groups.push(el("fieldset", {}, el("legend", {}, label(k)), settingsBlock(v))); continue; }
+    if (Array.isArray(v)) continue;
+    const type = typeof v === "boolean" ? "bool" : typeof v === "number" ? "number" : "text";
+    kv.append(el("span", { class: "small" }, label(k)), el("div", {}, bind(obj, k, type)));
+  }
+  return el("div", {}, kv, groups);
+}
+function viewSettings() {
+  app.append(el("div", { class: "card" }, settingsBlock(data.settings, ["sections"])),
+    el("p", { class: "muted small" }, "Kitchen sections per category are set on the Categories tab."));
+}
+
+/* ---------- test order + receipt preview ---------- */
+function lineTotal(l) { return ((Number(l.price) || 0) + (l.extras || []).reduce((s, x) => s + (Number(x.price) || 0), 0)) * (Number(l.qty) || 1); }
+function calc(o) {
+  if (o.totals && typeof o.totals.net === "number") return o.totals;
+  const sub = o.lines.reduce((s, l) => s + lineTotal(l), 0);
+  const disc = o.discType === "amt" ? Number(o.discVal) || 0 : o.discType === "pct" ? Math.round(sub * (Number(o.discVal) || 0) / 100) : 0;
+  const svc = o.type === "hall" ? Math.round((sub - disc) * (Number(data.settings.servicePct) || 0) / 100) : 0;
+  const del = Number(o.deliveryFee) || 0;
+  return { sub, disc, svc, del, net: sub - disc + svc + del };
+}
+function viewTest() {
+  const t = test;
+  if (!data.cats.some(c => c.id === t.cat)) t.cat = (data.cats[0] || {}).id;
+  const left = el("div", {}), right = el("div", { class: "order" });
+  app.append(el("p", { class: "muted small" }, "Try your menu like on the register. This test doesn't change the backup."), el("div", { class: "grid2" }, left, right));
+
+  left.append(el("div", { class: "row", style: "margin-bottom:8px" },
+    el("select", { onchange: e => { t.cat = e.target.value; render(); } }, data.cats.map(c => el("option", { value: c.id, ...(c.id === t.cat ? { selected: true } : {}) }, c.name)))));
+  for (const it of data.items.filter(i => i.catId === t.cat && i.active)) {
+    const sizes = it.sizes && it.sizes.length ? it.sizes : [{ name: "", price: 0 }];
+    left.append(el("div", { class: "card" }, el("div", { dir: "auto" }, el("b", {}, it.name), " ", el("span", { class: "muted small" }, it.en)),
+      el("div", { class: "row", style: "margin-top:6px" }, sizes.map(sz => el("button", { onclick: () => {
+        const same = t.lines.find(l => l.itemId === it.id && l.size === sz.name && !l.extras.length);
+        if (same) same.qty++; else t.lines.push({ itemId: it.id, catId: it.catId, name: it.name, size: sz.name, price: sz.price, extras: [], qty: 1 });
+        render();
+      } }, (sz.name ? sz.name + " · " : "") + money(sz.price))))));
+  }
+  if (!left.querySelector(".card")) left.append(el("p", { class: "muted" }, "No active items in this category."));
+
+  const order = { type: t.type, lines: t.lines, discType: t.discType, discVal: t.discVal, deliveryFee: t.type === "delivery" ? Number(data.settings.deliveryFee) || 0 : 0 };
+  const tt = calc(order);
+  const discIn = el("input", { type: "number", value: t.discVal, oninput: e => { t.discVal = Number(e.target.value) || 0; }, onchange: render });
+  right.append(el("div", { class: "card" },
+    el("div", { class: "row" },
+      el("select", { onchange: e => { t.type = e.target.value; render(); } },
+        [["away", "Takeaway"], ["hall", "Dine-in"], ["delivery", "Delivery"]].map(([v, n]) => el("option", { value: v, ...(t.type === v ? { selected: true } : {}) }, n))),
+      el("select", { onchange: e => { t.discType = e.target.value; render(); } },
+        [["none", "No discount"], ["amt", "Discount amount"], ["pct", "Discount %"]].map(([v, n]) => el("option", { value: v, ...(t.discType === v ? { selected: true } : {}) }, n))),
+      t.discType !== "none" ? discIn : null,
+      el("button", { class: "danger", onclick: () => { t.lines = []; render(); } }, "Clear")),
+    t.lines.length ? null : el("p", { class: "muted" }, "Tap items on the left to add them."),
+    t.lines.map((l, idx) => {
+      const avail = data.extras.filter(x => (x.cats || []).includes(l.catId));
+      return el("div", { style: "border-top:1px solid var(--line);padding:6px 0" },
+        el("div", { class: "row" }, el("span", { class: "grow", dir: "auto" }, l.name + (l.size ? " · " + l.size : "")),
+          el("button", { onclick: () => { if (l.qty > 1) l.qty--; else t.lines.splice(idx, 1); render(); } }, "−"), String(l.qty),
+          el("button", { onclick: () => { l.qty++; render(); } }, "+"), el("b", {}, money(lineTotal(l)))),
+        avail.length ? el("details", { class: "small" }, el("summary", { class: "muted" }, "Extras (" + l.extras.length + ")"),
+          el("div", { class: "row" }, avail.map(x => el("label", {}, el("input", { type: "checkbox", ...(l.extras.some(e => e.id === x.id) ? { checked: true } : {}), onchange: e => {
+            if (e.target.checked) l.extras.push({ id: x.id, name: x.name, price: x.price }); else l.extras = l.extras.filter(y => y.id !== x.id); render();
+          } }), x.name + (x.price ? " +" + money(x.price) : ""))))) : null);
+    }),
+    el("div", { class: "kv", style: "margin-top:8px" },
+      "Subtotal", el("span", {}, money(tt.sub)), tt.disc ? "Discount" : null, tt.disc ? el("span", {}, "−" + money(tt.disc)) : null,
+      tt.svc ? "Service" : null, tt.svc ? el("span", {}, money(tt.svc)) : null, tt.del ? "Delivery" : null, tt.del ? el("span", {}, money(tt.del)) : null,
+      el("b", {}, "Total"), el("b", {}, money(tt.net)))),
+    receiptPreview(order, tt));
+}
+function receiptPreview(o, tt) {
+  const s = data.settings, r = s.receipt || {};
+  const on = k => r[k] !== false;
+  const p = el("div", { class: "receipt", style: "width:" + Math.max(48, Number(r.width) || 72) * 3.78 + "px;max-width:100%;font-size:" + (Number(r.font) || 12) + "px" });
+  p.append(el("div", { class: "c" }, el("b", {}, s.name || "")),
+    on("showEn") && s.en ? el("div", { class: "c" }, s.en) : null,
+    on("showPhone") && s.phone ? el("div", { class: "c" }, s.phone) : null,
+    on("showAddress") && s.address ? el("div", { class: "c" }, s.address) : null, el("hr"),
+    on("showType") ? el("div", {}, { away: "سفري", hall: "صالة", delivery: "توصيل" }[o.type]) : null,
+    on("showDate") ? el("div", {}, new Date().toLocaleString("en-GB")) : null, el("hr"),
+    ...o.lines.map(l => el("div", {}, el("div", { style: "display:flex;justify-content:space-between;gap:8px" },
+      el("span", {}, l.qty + "× " + l.name + (l.size ? " " + l.size : "")), el("span", {}, lineTotal(l).toLocaleString("en-US"))),
+      on("showExtras") && l.extras.length ? el("div", { style: "font-size:.85em" }, "+ " + l.extras.map(x => x.name).join("، ")) : null)),
+    el("hr"), el("div", { style: "display:flex;justify-content:space-between" }, el("b", {}, "المجموع"), el("b", {}, money(tt.net))), el("hr"),
+    s.footer ? el("div", { class: "c" }, s.footer) : null,
+    on("showProverb") && r.proverb ? el("div", { class: "c", style: "font-style:italic" }, r.proverb) : null,
+    r.note ? el("div", { class: "c" }, r.note) : null);
+  return el("div", {}, el("p", { class: "muted small" }, "Receipt preview (approximate)"), p);
+}
+
+/* ---------- orders (read-only report) ---------- */
+let ordFilter = { status: "all", day: "" };
+function viewOrders() {
+  const O = data.orders;
+  const dayOf = o => o.businessDate || new Date(o.closedAt || o.createdAt).toISOString().slice(0, 10);
+  const paid = O.filter(o => o.status === "paid");
+  const days = [...new Set(O.map(dayOf))].sort().reverse();
+  const shown = O.filter(o => (ordFilter.status === "all" || o.status === ordFilter.status) && (!ordFilter.day || dayOf(o) === ordFilter.day));
+  const sum = a => a.reduce((s, o) => s + calc(o).net, 0);
+  app.append(el("div", { class: "stats" },
+    el("div", { class: "card stat" }, el("span", { class: "muted small" }, "Orders"), el("b", {}, O.length)),
+    el("div", { class: "card stat" }, el("span", { class: "muted small" }, "Paid sales"), el("b", {}, money(sum(paid)))),
+    el("div", { class: "card stat" }, el("span", { class: "muted small" }, "Voided"), el("b", {}, O.filter(o => o.status === "void").length)),
+    el("div", { class: "card stat" }, el("span", { class: "muted small" }, "Still open"), el("b", {}, O.filter(o => o.status === "open").length))));
+  app.append(el("div", { class: "row", style: "margin-bottom:8px" },
+    el("select", { onchange: e => { ordFilter.status = e.target.value; render(); } }, [["all", "All statuses"], ["paid", "Paid"], ["void", "Void"], ["open", "Open"]].map(([v, n]) => el("option", { value: v, ...(ordFilter.status === v ? { selected: true } : {}) }, n))),
+    el("select", { onchange: e => { ordFilter.day = e.target.value; render(); } }, el("option", { value: "" }, "All days"), days.map(d => el("option", { value: d, ...(ordFilter.day === d ? { selected: true } : {}) }, d))),
+    el("span", { class: "muted small" }, shown.length + " shown · " + money(sum(shown.filter(o => o.status === "paid"))) + " paid"),
+    el("span", { class: "grow" }),
+    el("button", { class: "danger", disabled: !shown.length, onclick: () => {
+      if (!confirm("Delete the " + shown.length + " orders shown? This only changes the edited copy you save.")) return;
+      const del = new Set(shown); data.orders = O.filter(o => !del.has(o)); touch(); render();
+    } }, "Delete shown")));
+  const rows = shown.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 300);
+  app.append(el("div", { class: "card scroll" }, el("table", {},
+    el("thead", {}, el("tr", {}, ["No.", "Date", "Type", "Items", "Total", "Status", "Cashier"].map(h => el("th", {}, h)))),
+    el("tbody", {}, rows.map(o => el("tr", { class: o.status === "void" ? "off" : "" },
+      el("td", {}, o.no), el("td", { class: "small" }, new Date(o.createdAt).toLocaleString("en-GB")),
+      el("td", {}, { away: "Takeaway", hall: "Dine-in", delivery: "Delivery" }[o.type] || o.type),
+      el("td", { dir: "auto", class: "small" }, o.lines.map(l => l.qty + "× " + l.name + (l.size ? " " + l.size : "")).join("، ")),
+      el("td", {}, money(calc(o).net)), el("td", {}, o.status), el("td", { class: "small" }, o.userName)))))),
+    shown.length > rows.length ? el("p", { class: "muted small" }, "Showing the newest 300. Filter by day to see others.") : null);
+}
+
+render();
+</script>
+</body>
+</html>
