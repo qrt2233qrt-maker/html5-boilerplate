@@ -1,0 +1,2 @@
+product_id,name_en,name_ar,category,price_iqd,sale_price_iqd,colors,sizes,stock_per_size,fabric,care,description_en,description_ar,photos
+example-01,Example Dress,فستان مثال,Dresses,85000,,Black|Beige,S|M|L,S:2|M:0|L:1,,,Write a short description here.,اكتبي وصفاً قصيراً هنا.,example-01-front.jpg|example-01-back.jpg|example-01-detail.jpg
