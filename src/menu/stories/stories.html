@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <title>Pizza Rita · Instagram Stories</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Cinzel:wght@500;700&family=Tajawal:wght@400;500;700;800&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+  <style>
+    /* Each .story is one 1080x1920 Instagram story in the printed menu's frame:
+       stone oven arch, ember header, Italian stripe, cream panel. */
+    :root {
+      --night: #0e0b09;
+      --stone: #2f2f2f;
+      --stone-joint: #4a4a4a;
+      --dark: #1c120d;
+      --brown: #3a2418;
+      --ember: #6b3a1e;
+      --cream: #f6f1ea;
+      --cream-deep: #ece3d6;
+      --ink: #1d1410;
+      --accent: #8a5a2b;
+      --muted: #6d625a;
+      --green: #4f8a4a;
+      --red: #c4472c;
+      --f-display: 'Amiri', 'Times New Roman', serif;
+      --f-body: 'Tajawal', 'Segoe UI', Tahoma, sans-serif;
+      --f-latin: 'Cinzel', Georgia, serif;
+      --f-num: 'Playfair Display', Georgia, serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #222; display: flex; flex-direction: column; align-items: center; gap: 40px; padding: 40px 0; }
+
+    .story {
+      position: relative; width: 1080px; height: 1920px; overflow: hidden; flex: none;
+      background: radial-gradient(ellipse at 50% 35%, #2a1a12 0%, var(--night) 65%);
+      font-family: var(--f-body); color: var(--ink);
+    }
+    /* stone arch: solid stone ring with darker joints painted over it */
+    .arch {
+      position: absolute; inset: 110px 56px 150px;
+      border: 34px solid var(--stone);
+      border-radius: 520px 520px 44px 44px / 470px 470px 44px 44px;
+      background: var(--cream);
+      display: flex; flex-direction: column; overflow: hidden;
+      box-shadow: 0 0 0 3px #1a1a1a, 0 30px 80px rgba(0, 0, 0, 0.6);
+    }
+    .arch::before {
+      content: ""; position: absolute; inset: -34px; pointer-events: none; z-index: 3;
+      border: 34px dashed var(--stone-joint); border-radius: inherit; opacity: 0.55;
+    }
+    .head {
+      flex: none; text-align: center; color: #f3e9dc; padding: 128px 40px 26px;
+      background: radial-gradient(ellipse at 50% 85%, var(--ember) 0%, var(--brown) 42%, var(--dark) 85%);
+    }
+    .head h1 { font: 700 88px/1.1 var(--f-display); margin: 0; }
+    .head .lat { font: 500 22px var(--f-latin); letter-spacing: 8px; color: #c8b59c; margin-top: 6px; }
+    .head .orn { font-size: 26px; color: #a98d6c; letter-spacing: 14px; margin-top: 6px; }
+    .stripe { flex: none; display: flex; height: 12px; }
+    .stripe i { flex: 1; }
+    .stripe i:nth-child(1) { background: var(--red); }
+    .stripe i:nth-child(2) { background: #f1ead8; }
+    .stripe i:nth-child(3) { background: var(--green); }
+    .panel {
+      position: relative; flex: 1; min-height: 0; padding: 22px 42px 0;
+      background:
+        repeating-linear-gradient(135deg, rgba(138, 90, 43, 0.035) 0 2px, transparent 2px 14px),
+        var(--cream);
+      display: flex; flex-direction: column;
+    }
+    .panel::after { /* faint logo watermark like the printed menu */
+      content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+      background: url(logo.png) center 46% / 560px auto no-repeat; opacity: 0.06;
+    }
+    .panel > * { position: relative; z-index: 1; }
+    .foot {
+      flex: none; text-align: center; padding: 12px 0 20px; font: 500 16px var(--f-latin);
+      letter-spacing: 5px; color: #a3927f; position: relative; z-index: 1;
+    }
+    .foot b { direction: ltr; display: block; font: 700 20px var(--f-num); letter-spacing: 2px; color: var(--accent); margin-top: 4px; }
+
+    /* ---------- cover ---------- */
+    .cover .arch { background: radial-gradient(ellipse at 50% 60%, var(--ember) 0%, var(--brown) 38%, var(--dark) 80%); }
+    .cover-in { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: #f3e9dc; padding: 120px 60px 60px; }
+    .cover-in img { width: 600px; filter: drop-shadow(0 18px 40px rgba(0, 0, 0, 0.5)); }
+    .cover-in h1 { font: 700 128px/1.1 var(--f-display); margin: 40px 0 0; }
+    .cover-in .lat { font: 500 24px var(--f-latin); letter-spacing: 10px; color: #c8b59c; margin-top: 10px; }
+    .cover-in .orn { font-size: 34px; color: #a98d6c; letter-spacing: 18px; margin: 18px 0 10px; }
+    .cover-in .tag { font: 500 34px var(--f-body); color: #e3d3bd; }
+    .cover-in .tag b { color: #fff; font-weight: 800; }
+    .swipe {
+      margin-top: 70px; display: inline-flex; align-items: center; gap: 18px;
+      font: 700 32px var(--f-body); color: var(--dark); background: #f3e9dc;
+      padding: 18px 40px; border-radius: 60px;
+    }
+    .swipe svg { width: 34px; height: 34px; }
+
+    /* ---------- specials ---------- */
+    .spec { flex: 1; display: flex; flex-direction: column; justify-content: space-evenly; padding-bottom: 10px; }
+    .sp { display: flex; align-items: center; gap: 40px; }
+    .sp.flip { flex-direction: row-reverse; }
+    .sp .ph { position: relative; flex: none; width: 380px; height: 380px; }
+    .sp .ph img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; box-shadow: 0 0 0 12px #fff, 0 0 0 14px var(--cream-deep), 0 26px 50px rgba(60, 30, 10, 0.35); }
+    .sp .badge {
+      position: absolute; top: 4px; inset-inline-start: 4px; width: 104px; height: 104px; border-radius: 50%;
+      background: var(--red); color: #fff; display: grid; place-items: center; text-align: center;
+      font: 800 22px/1.15 var(--f-body); box-shadow: 0 8px 18px rgba(0, 0, 0, 0.25); transform: rotate(-10deg);
+    }
+    .sp .tx { flex: 1; min-width: 0; }
+    .sp .tx.end { text-align: left; }
+    .sp h2 { font: 700 78px/1.1 var(--f-display); margin: 0; }
+    .sp .lat { font: 700 22px var(--f-latin); letter-spacing: 5px; color: var(--accent); margin: 4px 0 18px; }
+
+    /* ingredient chips */
+    .chips { display: flex; flex-wrap: wrap; gap: 10px; }
+    .end .chips { justify-content: flex-end; }
+    .chip { font: 500 27px/1 var(--f-body); background: #fff; border: 2px solid var(--cream-deep); color: #4a3a30; padding: 10px 18px 12px; border-radius: 40px; }
+    .chip.x2 { border-color: #e2b9a4; color: var(--red); }
+    .chip.any { background: var(--dark); color: #f3e9dc; border-color: var(--dark); }
+
+    .prices { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
+    .end .prices { justify-content: flex-end; }
+    .pp { display: flex; align-items: baseline; gap: 10px; background: var(--dark); color: #f3e9dc; padding: 10px 22px 12px; border-radius: 14px; }
+    .pp small { font: 500 24px var(--f-body); color: #c8b59c; }
+    .pp b { font: 700 36px var(--f-num); letter-spacing: 0.5px; }
+    .pp.l { background: var(--red); }
+    .pp.l small { color: #ffd9cc; }
+
+    /* ---------- pizza list ---------- */
+    .range { text-align: center; font: 700 26px var(--f-body); color: var(--accent); margin: 0 0 2px; letter-spacing: 1px; }
+    .list { flex: 1; display: flex; flex-direction: column; justify-content: space-evenly; }
+    .pz { display: flex; align-items: center; gap: 20px; padding: 11px 0; }
+    .pz + .pz { border-top: 2px dotted #d7c8b5; }
+    .pz .n {
+      flex: none; width: 66px; height: 66px; border-radius: 50%; display: grid; place-items: center;
+      background: var(--dark); color: #f3e9dc; font: 700 30px var(--f-num);
+    }
+    .pz .body { flex: 1; min-width: 0; }
+    .pz .nm { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+    .pz h3 { font: 700 50px/1.12 var(--f-display); margin: 0; }
+    .pz .lat { font: 700 19px var(--f-latin); letter-spacing: 4px; color: var(--accent); }
+    .pz .ic { display: inline-flex; gap: 6px; align-self: center; }
+    .pz .ic svg { width: 36px; height: 36px; }
+    .pz .chips { margin-top: 8px; gap: 8px; }
+    .pz .chip { font-size: 24px; padding: 6px 14px 8px; }
+    .pz .pr { flex: none; display: flex; flex-direction: column; gap: 6px; width: 184px; }
+    .pz .pr div { display: flex; justify-content: space-between; align-items: baseline; padding: 6px 16px 8px; border-radius: 12px; background: var(--cream-deep); }
+    .pz .pr div.l { background: var(--dark); color: #f3e9dc; }
+    .pz .pr small { font: 500 22px var(--f-body); color: var(--muted); }
+    .pz .pr .l small { color: #c8b59c; }
+    .pz .pr b { font: 700 30px var(--f-num); }
+    .pz .pr .na b { color: #b9ab9a; }
+
+    .subhead { display: flex; align-items: center; gap: 18px; margin: 18px 0 4px; }
+    .subhead span { font: 700 46px var(--f-display); color: var(--ink); }
+    .subhead small { font: 700 18px var(--f-latin); letter-spacing: 5px; color: var(--accent); }
+    .subhead::after { content: ""; flex: 1; height: 2px; background: #d7c8b5; }
+
+    .legend { display: flex; justify-content: center; gap: 40px; padding: 6px 0 0; font: 500 26px var(--f-body); color: var(--muted); }
+    .legend span { display: inline-flex; align-items: center; gap: 10px; }
+    .legend svg { width: 34px; height: 34px; }
+
+    /* ---------- order ---------- */
+    .order { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: space-evenly; text-align: center; padding-bottom: 10px; }
+    .order .ask { font: 700 44px var(--f-body); color: var(--accent); }
+    .phone {
+      direction: ltr; font: 700 104px var(--f-num); letter-spacing: 2px; color: #f3e9dc; background: var(--dark);
+      padding: 18px 54px 28px; border-radius: 28px; box-shadow: 0 20px 40px rgba(60, 30, 10, 0.3);
+    }
+    .qrbox { background: #fff; border-radius: 30px; padding: 28px; box-shadow: 0 0 0 2px var(--cream-deep), 0 20px 40px rgba(60, 30, 10, 0.18); }
+    .qrbox img { width: 360px; height: 360px; display: block; image-rendering: pixelated; }
+    .qrbox div { font: 700 26px var(--f-latin); letter-spacing: 4px; color: var(--accent); margin-top: 14px; }
+    .qrcap { font: 500 30px var(--f-body); color: var(--muted); margin-top: -20px; }
+    .addr { display: inline-flex; align-items: center; gap: 14px; font: 700 42px var(--f-display); }
+    .addr svg { width: 44px; height: 44px; }
+  </style>
+</head>
+<body>
+  <div id="stories"></div>
+
+  <script>
+    // ---------------- menu data (edit here) ----------------
+    const PHONE = '07884220000';
+    const ADDRESS = 'ذي قار · الناصرية · شارع المصطفى';
+
+    const SPECIALS = [
+      { name: 'مارغريتا', latin: 'MARGHERITA', photo: 'margherita.jpg', ing: ['جبن موزاريلا', 'طماطم'], m: 4500, l: 6000, veg: true },
+      { name: 'بيروني', latin: 'PEPPERONI', photo: 'pepperoni.jpg', ing: ['بيبروني', 'موزاريلا مضاعفة'], m: 6500, l: 9000 },
+      { name: 'بحرية', latin: 'SEAFOOD', photo: 'seafood.jpg', ing: ['تونة', 'روبيان', 'فلفل أخضر', 'طماطم طازجة'], m: 7000, l: 9500 },
+      { name: 'باربكيو', latin: 'B.B.Q ORIGINAL', photo: 'bbq.jpg', ing: ['صوص باربكيو', 'دجاج تندوري', 'بصل', 'فلفل أخضر'], m: 7000, l: 9500 },
+    ];
+
+    // ing items ending in " مضاعف/مضاعفة" are shown highlighted; m: null = not available
+    const PIZZAS = [
+      { name: 'هاوايان', latin: 'HAWAIIAN', ing: ['ديك رومي', 'أناناس'], m: 6500, l: 9000 },
+      { name: 'بيفي وان', latin: 'BEEFY ONE', ing: ['بصل', 'فطر', 'لحم مضاعف'], m: 7000, l: 10000 },
+      { name: 'محبي البيبروني', latin: 'PEPPERONI LOVERS', ing: ['بصل', 'فطر', 'بيبروني مضاعف'], m: 7000, l: 10000 },
+      { name: 'وليمة اللحوم', latin: 'MEATY FEAST', ing: ['شاورما لحم', 'بيبروني', 'ديك رومي'], m: 9000, l: 13000 },
+      { name: 'تشاينيز', latin: 'CHINESE', ing: ['فطر', 'ذرة حلوة', 'دجاج مضاعف'], m: 7000, l: 10000 },
+      { name: 'دجاج حار', latin: 'CHICKEN HOT', ing: ['فطر', 'فلفل حار', 'دجاج تندوري', 'طماطم طازجة'], m: 7500, l: 10500, hot: true },
+      { name: 'أمريكانا', latin: 'AMERICANA', ing: ['بصل', 'فلفل أخضر', 'فلفل حار', 'بيبروني'], m: 7000, l: 10000, hot: true },
+      { name: 'حارة', latin: 'SPICY HOT', ing: ['فلفل أخضر حار', 'هالبينو', 'لحم', 'بيبروني'], m: 8500, l: 12000, hot: true },
+      { name: 'اختيارك الحر', latin: 'FREE CHOICE', ing: ['أربع إضافات من اختيارك'], any: true, m: 7000, l: 10000 },
+      { name: 'نباتية خالصة', latin: 'VEGAN', ing: ['زيتون أسود', 'بصل أحمر', 'فطر', 'أوريغانو', 'باذنجان', 'كوسا'], m: 6500, l: 9000, veg: true },
+      { name: 'باذنجان حار', latin: 'AUBERGINE HOT', ing: ['فلفل حار', 'فطر', 'أوريغانو', 'بصل أحمر', 'باذنجان'], m: 6000, l: 8500, hot: true, veg: true },
+      { name: 'نباتية ديلايت', latin: 'VEGETARIAN DELIGHT', ing: ['بصل أحمر', 'فطر', 'فلفل أخضر', 'ذرة حلوة', 'طماطم طازجة'], m: 5500, l: 8000, veg: true },
+      { name: 'نباتية حارة', latin: 'VEGETARIAN HOT', ing: ['بصل أحمر', 'فطر', 'هالبينو', 'فلفل أخضر', 'ريحان'], m: 6000, l: 8500, hot: true, veg: true },
+      { name: 'كالزوني', latin: 'CALZONE', ing: ['بيتزا مطوية', 'أربع إضافات من اختيارك'], any: true, m: null, l: 9000 },
+      { name: 'ميكس شاورما', latin: 'MIX', ing: [], m: 9000, l: 13000, shawarma: true },
+      { name: 'شاورما لحم', latin: 'MEAT', ing: [], m: 8000, l: 12000, shawarma: true },
+      { name: 'شاورما دجاج', latin: 'CHICKEN', ing: [], m: 7000, l: 10000, shawarma: true },
+    ];
+
+    // ---------------- drawing ----------------
+    const fmt = (n) => (n == null ? '—' : n.toLocaleString('en-US'));
+    const CHILI = '<svg viewBox="0 0 40 40" aria-label="حار"><path d="M27 6c1 3 0 5-2 6" fill="none" stroke="#4f8a4a" stroke-width="3" stroke-linecap="round"/><path d="M25 11c4 2 5 7 2 12-4 7-12 11-20 11 6-3 10-8 11-14 1-5 3-9 7-9z" fill="#c4472c"/><path d="M14 27c3-2 6-6 7-10" fill="none" stroke="#fff" stroke-opacity=".45" stroke-width="2" stroke-linecap="round"/></svg>';
+    const LEAF = '<svg viewBox="0 0 40 40" aria-label="نباتي"><path d="M33 7C18 7 8 14 8 26c0 3 1 5 2 7 2-9 8-15 16-19-7 5-12 11-14 20 13 0 21-9 21-27z" fill="#4f8a4a"/></svg>';
+    const PIN = '<svg viewBox="0 0 40 40"><path d="M20 3c-7 0-12 5-12 12 0 9 12 22 12 22s12-13 12-22c0-7-5-12-12-12z" fill="#c4472c"/><circle cx="20" cy="15" r="5" fill="#f6f1ea"/></svg>';
+    const ARROW = '<svg viewBox="0 0 40 40"><path d="M25 8 13 20l12 12" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+    const chips = (ing, any) => '<div class="chips">' + ing.map((x) =>
+      '<span class="chip' + (any ? ' any' : /مضاعف/.test(x) ? ' x2' : '') + '">' + x + '</span>').join('') + '</div>';
+
+    const frame = (page, total, title, latin, inner) =>
+      '<section class="story"><div class="arch">' +
+        '<header class="head"><h1>' + title + '</h1><div class="lat">' + latin + '</div><div class="orn">❧ ✦ ❧</div></header>' +
+        '<div class="stripe"><i></i><i></i><i></i></div>' +
+        '<div class="panel">' + inner +
+          '<div class="foot">PIZZA RITA · ITALIAN CUISINE<b>' + String(page).padStart(2, '0') + ' / ' + String(total).padStart(2, '0') + '</b></div>' +
+        '</div></div></section>';
+
+    function specialsPage(page, total, pair) {
+      const inner = '<div class="spec">' + pair.map((s, i) =>
+        '<div class="sp' + (i % 2 ? ' flip' : '') + '">' +
+          '<div class="ph"><img src="' + s.photo + '" alt=""><div class="badge">★<br>مميزة</div></div>' +
+          '<div class="tx' + (i % 2 ? ' end' : '') + '"><h2>' + s.name + '</h2><div class="lat">' + s.latin + '</div>' +
+            chips(s.ing) +
+            '<div class="prices"><div class="pp"><small>وسط</small><b>' + fmt(s.m) + '</b></div><div class="pp l"><small>كبير</small><b>' + fmt(s.l) + '</b></div></div>' +
+          '</div></div>').join('') + '</div>';
+      return frame(page, total, 'أطباقنا المميزة', 'LE SPECIALITÀ', inner);
+    }
+
+    function pizzaRow(p, n) {
+      const icons = (p.hot ? CHILI : '') + (p.veg ? LEAF : '');
+      return '<div class="pz"><div class="n">' + n + '</div>' +
+        '<div class="body"><div class="nm"><h3>' + p.name + '</h3><span class="lat">' + p.latin + '</span>' +
+          (icons ? '<span class="ic">' + icons + '</span>' : '') + '</div>' +
+          (p.ing.length ? chips(p.ing, p.any) : '') + '</div>' +
+        '<div class="pr"><div class="' + (p.m == null ? 'na' : '') + '"><small>وسط</small><b>' + fmt(p.m) + '</b></div>' +
+          '<div class="l"><small>كبير</small><b>' + fmt(p.l) + '</b></div></div></div>';
+    }
+
+    function pizzaPage(page, total, from, to) {
+      let rows = '';
+      let shawarmaShown = false;
+      for (let i = from; i <= to; i++) {
+        const p = PIZZAS[i - 1];
+        if (p.shawarma && !shawarmaShown) {
+          rows += '<div class="subhead"><span>بيتزا الشاورما</span><small>SHAWARMA</small></div>';
+          shawarmaShown = true;
+        }
+        rows += pizzaRow(p, i);
+      }
+      const inner = '<div class="range">البيتزا ' + from + ' – ' + to + ' من ' + PIZZAS.length + '</div>' +
+        '<div class="list">' + rows + '</div>' +
+        '<div class="legend"><span>' + CHILI + 'حارة</span><span>' + LEAF + 'نباتية</span></div>';
+      return frame(page, total, 'البيتزا', 'PIZZA', inner);
+    }
+
+    function coverPage() {
+      return '<section class="story cover"><div class="arch"><div class="cover-in">' +
+        '<img src="logo.png" alt="Pizza Rita">' +
+        '<h1>قائمة البيتزا</h1><div class="lat">IL MENU DELLA PIZZA</div><div class="orn">❧ ✦ ❧</div>' +
+        '<div class="tag"><b>' + PIZZAS.length + '</b> نوع بيتزا · <b>' + SPECIALS.length + '</b> أطباق مميزة</div>' +
+        '<div class="swipe">اسحب لتشاهد القائمة ' + ARROW + '</div>' +
+        '</div></div></section>';
+    }
+
+    function orderPage(page, total) {
+      const inner = '<div class="order">' +
+        '<div class="ask">للطلب اتصل بنا</div>' +
+        '<div class="phone">' + PHONE + '</div>' +
+        '<div class="qrbox"><img src="qr.png" alt="pizzarita.vip"><div>PIZZARITA.VIP</div></div>' +
+        '<div class="qrcap">امسح الرمز لزيارة موقعنا</div>' +
+        '<div class="addr">' + PIN + ADDRESS + '</div>' +
+        '</div>';
+      return frame(page, total, 'اطلب الآن', 'ORDINA ORA', inner);
+    }
+
+    const TOTAL = 7;
+    document.getElementById('stories').outerHTML =
+      coverPage() +
+      specialsPage(2, TOTAL, SPECIALS.slice(0, 2)) +
+      specialsPage(3, TOTAL, SPECIALS.slice(2, 4)) +
+      pizzaPage(4, TOTAL, 1, 6) +
+      pizzaPage(5, TOTAL, 7, 12) +
+      pizzaPage(6, TOTAL, 13, 17) +
+      orderPage(7, TOTAL);
+  </script>
+</body>
+</html>
