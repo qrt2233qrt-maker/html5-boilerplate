@@ -88,12 +88,6 @@
     .cover-in .orn { font-size: 34px; color: #a98d6c; letter-spacing: 18px; margin: 18px 0 10px; }
     .cover-in .tag { font: 500 34px var(--f-body); color: #e3d3bd; }
     .cover-in .tag b { color: #fff; font-weight: 800; }
-    .swipe {
-      margin-top: 70px; display: inline-flex; align-items: center; gap: 18px;
-      font: 700 32px var(--f-body); color: var(--dark); background: #f3e9dc;
-      padding: 18px 40px; border-radius: 60px;
-    }
-    .swipe svg { width: 34px; height: 34px; }
 
     /* ---------- specials ---------- */
     .spec { flex: 1; display: flex; flex-direction: column; justify-content: space-evenly; padding-bottom: 10px; }
@@ -216,7 +210,6 @@
     const CHILI = '<svg viewBox="0 0 40 40" aria-label="حار"><path d="M27 6c1 3 0 5-2 6" fill="none" stroke="#4f8a4a" stroke-width="3" stroke-linecap="round"/><path d="M25 11c4 2 5 7 2 12-4 7-12 11-20 11 6-3 10-8 11-14 1-5 3-9 7-9z" fill="#c4472c"/><path d="M14 27c3-2 6-6 7-10" fill="none" stroke="#fff" stroke-opacity=".45" stroke-width="2" stroke-linecap="round"/></svg>';
     const LEAF = '<svg viewBox="0 0 40 40" aria-label="نباتي"><path d="M33 7C18 7 8 14 8 26c0 3 1 5 2 7 2-9 8-15 16-19-7 5-12 11-14 20 13 0 21-9 21-27z" fill="#4f8a4a"/></svg>';
     const PIN = '<svg viewBox="0 0 40 40"><path d="M20 3c-7 0-12 5-12 12 0 9 12 22 12 22s12-13 12-22c0-7-5-12-12-12z" fill="#c4472c"/><circle cx="20" cy="15" r="5" fill="#f6f1ea"/></svg>';
-    const ARROW = '<svg viewBox="0 0 40 40"><path d="M25 8 13 20l12 12" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
     const chips = (ing, any) => '<div class="chips">' + ing.map((x) =>
       '<span class="chip' + (any ? ' any' : /مضاعف/.test(x) ? ' x2' : '') + '">' + x + '</span>').join('') + '</div>';
@@ -272,7 +265,6 @@
         '<img src="logo.png" alt="Pizza Rita">' +
         '<h1>قائمة البيتزا</h1><div class="lat">IL MENU DELLA PIZZA</div><div class="orn">❧ ✦ ❧</div>' +
         '<div class="tag"><b>' + PIZZAS.length + '</b> نوع بيتزا · <b>' + SPECIALS.length + '</b> أطباق مميزة</div>' +
-        '<div class="swipe">اسحب لتشاهد القائمة ' + ARROW + '</div>' +
         '</div></div></section>';
     }
 
