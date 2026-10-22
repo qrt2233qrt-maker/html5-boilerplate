@@ -111,7 +111,7 @@ h1 { font-family: 'Amiri', serif; font-weight: 700; font-size: 38px; margin: 0; 
 .order { text-align: center; }
 .order strong { font-family: 'Playfair Display', serif; font-size: 38px; letter-spacing: 1px; }
 .qr { background: var(--cream); border-radius: 10px; padding: 8px 8px 4px; text-align: center; }
-.qr img { width: 92px; display: block; }
+.qr img { width: 92px; display: block; image-rendering: pixelated; }
 .qr small { color: var(--muted); font-size: 7px; margin-top: 3px; }
 
 @media (max-width: 800px) {
