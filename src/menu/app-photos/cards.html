@@ -40,6 +40,8 @@
     .flag i:nth-child(1) { background: var(--red); }
     .flag i:nth-child(2) { background: #f1ead8; }
     .flag i:nth-child(3) { background: var(--green); }
+    /* cards.html?plain: photo only, no name (for apps that refuse text on photos) */
+    .plain .name { display: none; }
   </style>
 </head>
 <body>
@@ -66,7 +68,9 @@
       ['saj-italian-tandoori-chicken', 'صاج إيطالي تندوري دجاج', 'ITALIAN SAJ · TANDOORI CHICKEN'],
     ];
     // largest window that keeps the photo's own shape
-    const MAX_W = 1080, MAX_H = 800;
+    const PLAIN = location.search.includes('plain');
+    if (PLAIN) document.body.classList.add('plain');
+    const MAX_W = 1080, MAX_H = PLAIN ? 1080 : 800;
     for (const [file, ar, lat, ext = 'png'] of DISHES) {
       const card = document.createElement('section');
       card.className = 'card';
