@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <title>Pizza Rita · App Photos</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@700&family=Cinzel:wght@600&display=swap" rel="stylesheet">
+  <style>
+    /* One 1200x1200 delivery-app photo per .card: the dish in a framed window
+       (shaped to the photo) over the menu's dark ember background, name below. */
+    :root {
+      --dark: #1c120d;
+      --brown: #3a2418;
+      --ember: #6b3a1e;
+      --cream: #f3e9dc;
+      --gold: #b48a58;
+      --latin: #c8b59c;
+      --green: #4f8a4a;
+      --red: #c4472c;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #222; display: flex; flex-wrap: wrap; gap: 30px; padding: 30px; }
+    .card {
+      width: 1200px; height: 1200px; flex: none; overflow: hidden;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 46px;
+      background: radial-gradient(ellipse at 50% 38%, var(--ember) 0%, var(--brown) 45%, var(--dark) 88%);
+      padding: 60px;
+    }
+    .photo {
+      flex: none; border-radius: 26px; overflow: hidden;
+      box-shadow: 0 0 0 3px var(--gold), 0 30px 70px rgba(0, 0, 0, 0.55);
+    }
+    .photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
+    .name { text-align: center; color: var(--cream); }
+    .name h1 { font: 700 96px/1.15 'Amiri', 'Times New Roman', serif; margin: 0; }
+    .name .lat { font: 600 28px 'Cinzel', Georgia, serif; letter-spacing: 9px; color: var(--latin); margin-top: 30px; direction: ltr; }
+    .flag { display: flex; width: 150px; height: 4px; margin: 20px auto 0; border-radius: 2px; overflow: hidden; }
+    .flag i { flex: 1; }
+    .flag i:nth-child(1) { background: var(--red); }
+    .flag i:nth-child(2) { background: #f1ead8; }
+    .flag i:nth-child(3) { background: var(--green); }
+  </style>
+</head>
+<body>
+  <script>
+    // file in src/ -> name shown on the photo
+    const DISHES = [
+      ['special-margherita', 'مارغريتا', 'MARGHERITA', 'jpg'],
+      ['special-pepperoni', 'بيروني', 'PEPPERONI', 'jpg'],
+      ['special-seafood', 'بحرية', 'SEAFOOD', 'jpg'],
+      ['special-bbq', 'باربكيو', 'B.B.Q ORIGINAL', 'jpg'],
+      ['pizza-02-beefy-one', 'بيفي وان', 'BEEFY ONE'],
+      ['pizza-03-pepperoni-lovers', 'محبي البيبروني', 'PEPPERONI LOVERS'],
+      ['pizza-04-meaty-feast', 'وليمة اللحوم', 'MEATY FEAST'],
+      ['pizza-05-chinese', 'تشاينيز', 'CHINESE'],
+      ['pizza-06-chicken-hot', 'دجاج حار', 'CHICKEN HOT'],
+      ['pizza-07-americana', 'أمريكانا', 'AMERICANA'],
+      ['pizza-08-spicy-hot', 'حارة', 'SPICY HOT'],
+      ['pizza-10-vegan', 'نباتية خالصة', 'VEGAN'],
+      ['pizza-11-aubergine-hot', 'باذنجان حار', 'AUBERGINE HOT'],
+      ['pizza-14-calzone', 'كالزوني', 'CALZONE'],
+      ['saj-italian-pepperoni', 'صاج إيطالي ببروني', 'ITALIAN SAJ · PEPPERONI'],
+      ['saj-italian-shawarma-meat', 'صاج إيطالي شاورما لحم', 'ITALIAN SAJ · MEAT SHAWARMA'],
+      ['saj-italian-shawarma-chicken', 'صاج إيطالي شاورما دجاج', 'ITALIAN SAJ · CHICKEN SHAWARMA'],
+      ['saj-italian-tandoori-chicken', 'صاج إيطالي تندوري دجاج', 'ITALIAN SAJ · TANDOORI CHICKEN'],
+    ];
+    // largest window that keeps the photo's own shape
+    const MAX_W = 1080, MAX_H = 800;
+    for (const [file, ar, lat, ext = 'png'] of DISHES) {
+      const card = document.createElement('section');
+      card.className = 'card';
+      card.dataset.file = file;
+      card.innerHTML =
+        '<div class="photo"><img src="src/' + file + '.' + ext + '" alt=""></div>' +
+        '<div class="name"><h1></h1><div class="lat"></div><div class="flag"><i></i><i></i><i></i></div></div>';
+      card.querySelector('h1').textContent = ar;
+      card.querySelector('.lat').textContent = lat;
+      const img = card.querySelector('img');
+      img.onload = () => {
+        const s = Math.min(MAX_W / img.naturalWidth, MAX_H / img.naturalHeight);
+        const box = card.querySelector('.photo');
+        box.style.width = Math.round(img.naturalWidth * s) + 'px';
+        box.style.height = Math.round(img.naturalHeight * s) + 'px';
+        img.dataset.ready = '1';
+      };
+      document.body.appendChild(card);
+    }
+  </script>
+</body>
+</html>
