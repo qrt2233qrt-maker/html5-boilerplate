@@ -214,16 +214,27 @@ None of these has been exploited or tested dynamically. They come from reading t
 
 ---
 
+### 9.1 Decisions recorded (2026-10-31)
+
+| Decision | Choice |
+|---|---|
+| Front-end architecture | **Next.js (App Router) + Supabase**, hosted on Vercel |
+| Visual direction | **Restrained premium** per spec §2: 3D hero, glows and heavy scroll effects removed |
+| Payments at launch | **Cash on delivery only**; online provider added later through the same checkout design |
+| Repository | **New dedicated repository**, to be created by the owner |
+
+---
+
 ## 10. Unresolved issues list
 
 Maintained from this point on. Each item is closed only after verification.
 
 | # | Issue | Owner | Status |
 |---|---|---|---|
-| U-1 | Architecture decision (§9.1) | Business | Open |
-| U-2 | Design direction decision (§9.2) | Business | Open |
-| U-3 | Payment methods (§9.3) | Business | Open |
-| U-4 | Repository location (§9.4) | Business | Open |
+| U-1 | Architecture decision (§9.1) | Business | Closed: Next.js + Supabase |
+| U-2 | Design direction decision (§9.2) | Business | Closed: restrained premium |
+| U-3 | Payment methods (§9.3) | Business | Closed: COD only at launch |
+| U-4 | Repository location (§9.4) | Business | Decided: new repo. Open: owner to create it |
 | U-5 | Business information (§8) | Business | Open |
 | U-6 | Remove fabricated content CONTENT-01..03 | Claude | Open; to be done in Phase 3 or earlier on request |
 | U-7 | Security findings SEC-01..09 | Claude | Open; addressed by the Phase 2 design, verified in Phase 8 |
