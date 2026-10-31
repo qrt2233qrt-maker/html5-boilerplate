@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { t } from '@/i18n';
 import { formatIQD } from '@/lib/format';
 import { repo, shortRef } from '@/lib/repo';
-import { openWhatsApp, orderMessage, waLink } from '@/lib/whatsapp';
+import { orderMessage, waLink } from '@/lib/whatsapp';
 import { useScrollFx } from '@/hooks/useScrollFx';
 import { cartTotal, useCart } from '@/store/cart';
 import type { OrderInput } from '@/types';
@@ -17,7 +17,7 @@ export default function Cart() {
   const { lines, clear } = useCart();
   const total = cartTotal(lines);
   const [form, setForm] = useState({ name: '', phone: '', address: '', notes: '' });
-  const [sent, setSent] = useState(false);
+  const [sent, setSent] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   useScrollFx(ref, [lines.length === 0]);
 
@@ -26,8 +26,6 @@ export default function Cart() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!lines.length) return;
-    // افتح نافذة WhatsApp فوراً (قبل أي انتظار) لتجنّب حظر النوافذ المنبثقة
-    const win = window.open('', '_blank');
     setBusy(true);
     const order: OrderInput = {
       customerName: form.name.trim(),
@@ -44,11 +42,9 @@ export default function Cart() {
     } catch {
       /* حتى لو فشل الحفظ، يبقى الطلب عبر WhatsApp متاحاً */
     }
-    const msg = orderMessage(order, refCode);
-    if (win) win.location.href = waLink(msg);
-    else openWhatsApp(msg);
+    // رابط حقيقي بدل النوافذ المنبثقة — يعمل حتى مع مانعات النوافذ
+    setSent(waLink(orderMessage(order, refCode)));
     setBusy(false);
-    setSent(true);
     clear();
   };
 
@@ -63,7 +59,11 @@ export default function Cart() {
               <Icon name="check" size={36} />
             </span>
             <p className="text-lg text-slate-200">{t.cart.sent}</p>
-            <Link to="/store" className="btn-primary">{t.cart.emptyCta}</Link>
+            <a href={sent} target="_blank" rel="noopener noreferrer" className="btn-wa h-14 w-full text-base">
+              <Icon name="whatsapp" />
+              {t.cart.sendNow}
+            </a>
+            <Link to="/store" className="text-sm text-volt-300 hover:text-white">{t.cart.emptyCta}</Link>
           </div>
         ) : lines.length === 0 ? (
           <div data-reveal className="card mx-auto flex max-w-xl flex-col items-center gap-5 p-12 text-center">

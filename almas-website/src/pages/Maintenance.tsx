@@ -3,7 +3,7 @@ import { repairServices } from '@/data/seed';
 import { site } from '@/config/site';
 import { t } from '@/i18n';
 import { repo, shortRef } from '@/lib/repo';
-import { bookingMessage, openWhatsApp, waLink } from '@/lib/whatsapp';
+import { bookingMessage, waLink } from '@/lib/whatsapp';
 import { useScrollFx } from '@/hooks/useScrollFx';
 import type { BookingInput } from '@/types';
 import { Icon } from '@/components/ui/Icon';
@@ -19,11 +19,11 @@ export default function Maintenance() {
   const today = new Date().toISOString().slice(0, 10);
   const [form, setForm] = useState<BookingInput>({ name: '', phone: '', device: '', service: repairServices[0].title, issue: '', date: today, time: times[0] });
   const [status, setStatus] = useState<'idle' | 'busy' | 'done'>('idle');
+  const [waHref, setWaHref] = useState('');
   const set = (k: keyof BookingInput) => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    const win = window.open('', '_blank');
     setStatus('busy');
     let refCode = Date.now().toString(36).slice(-6).toUpperCase();
     try {
@@ -32,9 +32,7 @@ export default function Maintenance() {
     } catch {
       /* الحجز عبر WhatsApp يبقى متاحاً */
     }
-    const msg = bookingMessage(form, refCode);
-    if (win) win.location.href = waLink(msg);
-    else openWhatsApp(msg);
+    setWaHref(waLink(bookingMessage(form, refCode)));
     setStatus('done');
   };
 
@@ -110,7 +108,11 @@ export default function Maintenance() {
                   <Icon name="check" size={36} />
                 </span>
                 <p className="text-lg">{t.maintenance.form.success}</p>
-                <button className="btn-ghost btn-sm" onClick={() => setStatus('idle')}>حجز موعد آخر</button>
+                <a href={waHref} target="_blank" rel="noopener noreferrer" className="btn-wa h-14 w-full text-base">
+                  <Icon name="whatsapp" />
+                  {t.maintenance.form.sendNow}
+                </a>
+                <button className="text-sm text-volt-300 hover:text-white" onClick={() => setStatus('idle')}>حجز موعد آخر</button>
               </div>
             ) : (
               <form data-reveal="scale" onSubmit={submit} className="card grid gap-5 p-6 sm:grid-cols-2 sm:p-10">

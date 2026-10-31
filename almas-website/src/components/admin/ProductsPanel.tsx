@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { t } from '@/i18n';
 import { formatIQD } from '@/lib/format';
 import { repo } from '@/lib/repo';
 import { useCatalog } from '@/store/catalog';
 import type { Product } from '@/types';
+import { ConfirmButton } from '@/components/ui/ConfirmButton';
 import { Icon } from '@/components/ui/Icon';
 import { ProductMedia } from '@/components/ui/ProductMedia';
 import { ProductForm } from './ProductForm';
@@ -12,6 +14,7 @@ export function ProductsPanel() {
   const { products, load } = useCatalog();
   const [editing, setEditing] = useState<Product | 'new' | null>(null);
   const [q, setQ] = useState('');
+  const [error, setError] = useState('');
 
   const list = useMemo(
     () => products.filter((p) => `${p.name} ${p.brand}`.toLowerCase().includes(q.toLowerCase())),
@@ -19,12 +22,12 @@ export function ProductsPanel() {
   );
 
   const remove = async (p: Product) => {
-    if (!confirm(`حذف "${p.name}" نهائياً؟`)) return;
+    setError('');
     try {
       await repo.deleteProduct(p.id);
       await load(true);
     } catch (e) {
-      alert((e as Error).message);
+      setError((e as Error).message);
     }
   };
 
@@ -41,6 +44,7 @@ export function ProductsPanel() {
         </button>
       </div>
 
+      {error && <p className="mb-4 rounded-xl bg-rose-500/10 p-3 text-sm text-rose-300">{error}</p>}
       <div className="card overflow-hidden">
         <div className="overflow-x-auto" data-lenis-prevent>
           <table className="w-full min-w-[720px] text-sm">
@@ -80,9 +84,9 @@ export function ProductsPanel() {
                   <td className="p-3 text-slate-400">{p.images.length || <span className="text-amber-300/80">بدون صورة</span>}</td>
                   <td className="p-3">
                     <div className="flex justify-end gap-1">
-                      <a href={`/product/${p.slug}`} target="_blank" rel="noreferrer" className="grid h-9 w-9 place-items-center rounded-full text-slate-400 hover:bg-white/5 hover:text-white" aria-label="عرض"><Icon name="external" size={17} /></a>
+                      <Link to={`/product/${p.slug}`} className="grid h-9 w-9 place-items-center rounded-full text-slate-400 hover:bg-white/5 hover:text-white" aria-label="عرض"><Icon name="external" size={17} /></Link>
                       <button onClick={() => setEditing(p)} className="grid h-9 w-9 place-items-center rounded-full text-slate-400 hover:bg-white/5 hover:text-white" aria-label={t.common.edit}><Icon name="edit" size={17} /></button>
-                      <button onClick={() => remove(p)} className="grid h-9 w-9 place-items-center rounded-full text-slate-400 hover:bg-rose-500/10 hover:text-rose-400" aria-label={t.common.delete}><Icon name="trash" size={17} /></button>
+                      <ConfirmButton onConfirm={() => remove(p)} label={t.common.delete} />
                     </div>
                   </td>
                 </tr>

@@ -4,7 +4,7 @@ import { site } from '@/config/site';
 import { t } from '@/i18n';
 import { cx, discountPercent, formatIQD } from '@/lib/format';
 import { gsap } from '@/lib/motion';
-import { openWhatsApp, productMessage } from '@/lib/whatsapp';
+import { productMessage, waLink } from '@/lib/whatsapp';
 import { useScrollFx } from '@/hooks/useScrollFx';
 import { useTilt } from '@/hooks/useTilt';
 import { useCart } from '@/store/cart';
@@ -171,10 +171,10 @@ export default function ProductPage() {
                   {added ? t.product.added : t.product.addToCart}
                 </button>
               </div>
-              <button data-reveal className="btn-wa mt-3 h-14 w-full text-base" onClick={() => openWhatsApp(productMessage(product, qty, color))}>
+              <a data-reveal href={waLink(productMessage(product, qty, color))} target="_blank" rel="noopener noreferrer" className="btn-wa mt-3 h-14 w-full text-base">
                 <Icon name="whatsapp" />
                 {t.product.orderWhatsapp}
-              </button>
+              </a>
 
               <div data-reveal className="mt-8 grid grid-cols-3 gap-3">
                 {[

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { formatDate, formatIQD } from '@/lib/format';
 import { repo, shortRef } from '@/lib/repo';
 import type { Booking, BookingStatus, Order, OrderStatus } from '@/types';
+import { ConfirmButton } from '@/components/ui/ConfirmButton';
 import { Icon } from '@/components/ui/Icon';
 
 const bookingStatus: Record<BookingStatus, string> = { new: 'جديد', confirmed: 'مؤكد', in_progress: 'قيد الإصلاح', done: 'مكتمل', cancelled: 'ملغي' };
@@ -60,13 +61,7 @@ export function BookingsPanel() {
             >
               {Object.entries(bookingStatus).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
-            <button
-              className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-slate-400 hover:bg-rose-500/10 hover:text-rose-400"
-              onClick={async () => { if (confirm('حذف الحجز؟')) { await repo.deleteBooking(b.id); void reload(); } }}
-              aria-label="حذف"
-            >
-              <Icon name="trash" size={18} />
-            </button>
+            <ConfirmButton onConfirm={async () => { await repo.deleteBooking(b.id); void reload(); }} />
           </div>
         </article>
       ))}
@@ -117,13 +112,7 @@ export function OrdersPanel() {
             >
               {Object.entries(orderStatus).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
-            <button
-              className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-slate-400 hover:bg-rose-500/10 hover:text-rose-400"
-              onClick={async () => { if (confirm('حذف الطلب؟')) { await repo.deleteOrder(o.id); void reload(); } }}
-              aria-label="حذف"
-            >
-              <Icon name="trash" size={18} />
-            </button>
+            <ConfirmButton onConfirm={async () => { await repo.deleteOrder(o.id); void reload(); }} />
           </div>
         </article>
       ))}

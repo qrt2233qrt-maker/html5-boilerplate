@@ -112,13 +112,13 @@ const localRepo: DataRepo = {
   async signIn(email, password) {
     if (email.trim().toLowerCase() !== DEMO_ADMIN.email || password !== DEMO_ADMIN.password)
       throw new Error('بيانات الدخول غير صحيحة');
-    sessionStorage.setItem(LS.admin, '1');
+    try { sessionStorage.setItem(LS.admin, '1'); } catch { /* التخزين غير متاح */ }
   },
   async signOut() {
-    sessionStorage.removeItem(LS.admin);
+    try { sessionStorage.removeItem(LS.admin); } catch { /* التخزين غير متاح */ }
   },
   async isAdmin() {
-    return sessionStorage.getItem(LS.admin) === '1';
+    try { return sessionStorage.getItem(LS.admin) === '1'; } catch { return false; }
   },
 };
 
