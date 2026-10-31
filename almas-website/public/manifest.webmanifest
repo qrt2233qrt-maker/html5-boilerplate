@@ -1,0 +1,11 @@
+{
+  "name": "الماس | Al-maas",
+  "short_name": "الماس",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#030408",
+  "theme_color": "#030408",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
