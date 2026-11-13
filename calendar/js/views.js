@@ -81,7 +81,7 @@
 
   // ---------- the chosen day's schedule ----------
   CC.dayPanel = (date) => {
-    const hasPhotos = CC.uploads.length > 0;
+    const hasPhotos = CC.pool().length > 0;
     if (hasPhotos && !CC.hasPhoto(ui.dayShown)) ui.dayShown = CC.hasPhoto(S.dayPhotos[date]) ? S.dayPhotos[date] : CC.randomPhoto(null);
     const pinned = S.dayPhotos[date] === ui.dayShown, occs = CC.visible(date, date).sort(CC.byTime), notes = CC.D.notes.filter((n) => n.date === date && !n.deleted && !n.archived);
     const free = CC.freeSlots(date), freeMin = free.reduce((a, s) => a + s[1] - s[0], 0), clashes = CC.conflicts(date), t = CC.today();
@@ -167,7 +167,7 @@
   function monthView() {
     const a = CC.fromYmd(ui.sel), y = a.getFullYear(), m = a.getMonth(), key = y + '-' + CC.pad(m + 1), today = CC.today();
     const count = new Date(y, m + 1, 0).getDate(), lead = (new Date(y, m, 1).getDay() - S.weekStart + 7) % 7, by = group(CC.visible(key + '-01', key + '-' + CC.pad(count)));
-    const hero = CC.uploads.length ? h('div', { class: 'hero' }, h('img', { src: CC.srcOf(CC.monthPhoto(key)), alt: '' }), h('div', { class: 'scrim' }),
+    const hero = CC.pool().length ? h('div', { class: 'hero' }, h('img', { src: CC.srcOf(CC.monthPhoto(key)), alt: '' }), h('div', { class: 'scrim' }),
       h('div', { class: 'on-photo-row' },
         h('button', { class: 'on-photo', type: 'button', onclick: () => { S.monthPhotos[key] = CC.randomPhoto(CC.monthPhoto(key)); CC.saveS(); CC.render(); } }, 'Shuffle'),
         h('button', { class: 'on-photo', type: 'button', onclick: () => CC.openPicker('Photo for ' + CC.MONTHS[m], (id) => { S.monthPhotos[key] = id; CC.saveS(); CC.render(); }) }, 'Choose'))) : null;

@@ -41,7 +41,7 @@
   CC.celebrate = (x, y) => {
     const m = CC.motion(), cx = x || innerWidth / 2, cy = y || innerHeight * .4;
     if (m !== 'off' && document.body.animate) {
-      const cols = ['#f5b352', '#ffd98a', '#8b6cff', '#c9b6ff', '#ffffff'], n = m === 'full' ? 26 : 12;
+      const cs = getComputedStyle(document.documentElement), cols = [cs.getPropertyValue('--accent').trim(), cs.getPropertyValue('--accent2').trim(), cs.getPropertyValue('--violet').trim(), '#ffffff'], n = m === 'full' ? 26 : 12;
       for (let i = 0; i < n; i++) {
         const s = h('i', { class: 'spark', style: { left: cx + 'px', top: cy + 'px', background: cols[i % cols.length], 'box-shadow': '0 0 10px ' + cols[i % cols.length] } }); document.body.append(s);
         const a = Math.PI * 2 * i / n + Math.random() * .5, d = 50 + Math.random() * 90, sz = .5 + Math.random() * 1.1;
@@ -59,7 +59,10 @@
 
   CC.applyLook = () => {
     const r = document.documentElement;
+    if (S.look === 'midnight') r.removeAttribute('data-look'); else r.setAttribute('data-look', S.look);
+    if (S.font === 'elegant') r.removeAttribute('data-font'); else r.setAttribute('data-font', S.font);
     r.setAttribute('data-density', S.density); r.setAttribute('data-motion', CC.motion()); r.setAttribute('data-exp', S.bg.exp);
+    if (S.accent) r.style.setProperty('--accent', S.accent); else r.style.removeProperty('--accent');
     CC.bg.apply();
   };
 
@@ -67,21 +70,24 @@
   const par = { x: 0, y: 0 };
   addEventListener('pointermove', (e) => { if (e.pointerType === 'mouse') { par.x = e.clientX / innerWidth * 2 - 1; par.y = e.clientY / innerHeight * 2 - 1; } }, { passive: true });
   const STARS = Array.from({ length: 130 }, () => ({ x: Math.random(), y: Math.random(), z: .3 + Math.random() * .7, sp: .4 + Math.random() * 1.4, ph: Math.random() * 6 }));
+  const rgbOf = (v) => { const m = /^#([0-9a-f]{6})$/i.exec(v.trim()); if (!m) return '140,110,255'; const n = parseInt(m[1], 16); return (n >> 16) + ',' + ((n >> 8) & 255) + ',' + (n & 255); };
   const glow = (c, x, y, r, rgb, a) => { const g = c.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, 'rgba(' + rgb + ',' + a + ')'); g.addColorStop(1, 'rgba(' + rgb + ',0)'); c.fillStyle = g; c.fillRect(x - r, y - r, r * 2, r * 2); };
+  let pal = null;
   function luxe(c, w, hg, t, p, starry) {
-    const g = c.createLinearGradient(0, 0, 0, hg); g.addColorStop(0, '#0b0820'); g.addColorStop(.55, '#0a0719'); g.addColorStop(1, '#06050d'); c.fillStyle = g; c.fillRect(0, 0, w, hg);
-    const m = Math.max(w, hg);
-    glow(c, w * (.18 + .05 * Math.sin(t * .05)) + p.x * 12, hg * .1, m * .75, '91,59,214', .34);
-    glow(c, w * (.9 + .04 * Math.cos(t * .04)) - p.x * 10, hg * .5, m * .6, '27,42,140', .34);
-    glow(c, w * (.55 + .08 * Math.sin(t * .03 + 2)), hg * 1.08, m * .55, '245,179,82', .13);
-    c.fillStyle = '#efe9ff';
+    if (!pal) { const cs = getComputedStyle(document.documentElement), v = (n) => cs.getPropertyValue(n).trim(); pal = { bg: v('--bg'), bg2: v('--bg2'), a: rgbOf(v('--accent')), v: rgbOf(v('--violet')), n: rgbOf(v('--navy')), ink: v('--ink'), light: S.look === 'blush' }; }
+    const g = c.createLinearGradient(0, 0, 0, hg); g.addColorStop(0, pal.bg2); g.addColorStop(.6, pal.bg); g.addColorStop(1, pal.bg); c.fillStyle = g; c.fillRect(0, 0, w, hg);
+    const m = Math.max(w, hg), k = pal.light ? .6 : 1;
+    glow(c, w * (.18 + .05 * Math.sin(t * .05)) + p.x * 12, hg * .1, m * .75, pal.v, .34 * k);
+    glow(c, w * (.9 + .04 * Math.cos(t * .04)) - p.x * 10, hg * .5, m * .6, pal.n, .34 * k);
+    glow(c, w * (.55 + .08 * Math.sin(t * .03 + 2)), hg * 1.08, m * .55, pal.a, pal.light ? .3 : .13);
+    c.fillStyle = pal.light ? 'rgb(' + pal.a + ')' : pal.ink;
     for (const s of STARS) { c.globalAlpha = (starry ? .9 : .5) * (.25 + .75 * Math.abs(Math.sin(t * s.sp * .6 + s.ph))); c.beginPath(); c.arc(s.x * w + p.x * s.z * 10, s.y * hg + p.y * s.z * 6, s.z * (starry ? 1.7 : 1.2), 0, 7); c.fill(); }
     c.globalAlpha = 1;
   }
   let raf = 0, lastT = 0, world = null, loading = false, glFailed = false;
   function size2d() { const c = $('#bg-c'), k = Math.min(1.25, devicePixelRatio || 1); c.width = Math.round(innerWidth * k); c.height = Math.round(innerHeight * k); }
   function frame(ts) {
-    raf = 0; if (document.hidden) return;
+    raf = 0; if (document.hidden || S.bg.exp === 'photos') return;
     const m = CC.motion(), cosmic = S.bg.exp === 'cosmic' && world, gap = cosmic ? (CC.isMobile() ? 33 : 22) : 60;
     if (ts - lastT >= gap) {
       lastT = ts; const t = m === 'off' ? 40 : ts / 1000 * (m === 'subtle' ? .5 : 1);
@@ -98,16 +104,22 @@
       .catch(() => { glFailed = true; })
       .then(() => { loading = false; CC.bg.apply(); if (CC.ui.view === 'settings') CC.render(); });
   }
+  let slideT = 0, slideI = 0, flip = false;
+  const slides = () => { const u = CC.uploads.map((x) => x.id); return u.length ? u : CC.pool(); };
+  function showSlide() { const l = slides(); if (!l.length) return; const els = document.querySelectorAll('.bg-ph'), el = els[flip ? 1 : 0], other = els[flip ? 0 : 1]; el.style.backgroundImage = 'url("' + CC.srcOf(l[slideI % l.length]) + '")'; el.classList.add('on'); other.classList.remove('on'); flip = !flip; slideI++; }
   CC.bg = {
     failed: () => glFailed,
     apply() {
-      const c2 = $('#bg-c'), gl = $('#bg-gl'); if (!c2) return;
-      const cosmic = S.bg.exp === 'cosmic';
+      const c2 = $('#bg-c'), gl = $('#bg-gl'), media = $('#bg-media'), b = S.bg; if (!c2) return;
+      pal = null; clearInterval(slideT);
+      const cosmic = b.exp === 'cosmic', photos = b.exp === 'photos';
       if (cosmic && !world) startWorld();
       const live = cosmic && !!world;
-      gl.hidden = !live; c2.hidden = live; if (!live) size2d();
-      $('#bg-dim').style.opacity = S.bg.dim / 100;
-      cancelAnimationFrame(raf); raf = 0; kick();
+      gl.hidden = !live; media.hidden = !photos; c2.hidden = live || photos; if (!live && !photos) size2d();
+      media.style.filter = 'blur(' + b.blur + 'px) brightness(' + b.bright + '%)'; media.style.setProperty('--fade', b.fade + 's');
+      $('#bg-dim').style.opacity = b.dim / 100;
+      if (photos) { showSlide(); if (slides().length > 1) slideT = setInterval(showSlide, Math.max(4, b.secs) * 1000); }
+      cancelAnimationFrame(raf); raf = 0; if (!photos) kick();
     }
   };
   addEventListener('resize', () => { if (world) world.resize(); size2d(); kick(); });

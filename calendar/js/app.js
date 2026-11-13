@@ -15,7 +15,7 @@
       h('button', { class: 'pill only-d', type: 'button', title: 'Saved on this device. Google Calendar is not connected.', onclick: () => go('settings') }, 'This device only'),
       h('button', { class: 'ib', type: 'button', 'aria-label': 'Search', onclick: CC.openSearch }, CC.icon('search')),
       h('button', { class: 'ib only-m', type: 'button', 'aria-label': 'Agenda', 'aria-pressed': String(ui.view === 'agenda'), onclick: () => go('agenda') }, CC.icon('list')),
-      h('button', { class: 'ib', type: 'button', 'aria-label': cosmic ? 'Switch to Midnight Luxury' : 'Switch to Cosmic Universe', 'aria-pressed': String(cosmic), title: cosmic ? 'Cosmic Universe is on' : 'Midnight Luxury is on', onclick: () => { S.bg.exp = cosmic ? 'luxe' : 'cosmic'; CC.saveS(); CC.applyLook(); CC.render(); CC.toast(cosmic ? 'Midnight Luxury' : 'Cosmic Universe'); } }, CC.icon('planet')),
+      h('button', { class: 'ib', type: 'button', 'aria-label': cosmic ? 'Turn planets and stars off' : 'Turn planets and stars on', 'aria-pressed': String(cosmic), title: cosmic ? 'Planets and stars are on' : 'Planets and stars are off', onclick: () => { if (cosmic) S.bg.exp = S.bg.prev === 'photos' ? 'photos' : 'luxe'; else { S.bg.prev = S.bg.exp; S.bg.exp = 'cosmic'; } CC.saveS(); CC.applyLook(); CC.render(); CC.toast(cosmic ? 'Planets and stars off' : 'Planets and stars on'); } }, CC.icon('planet')),
       h('button', { class: 'ib', type: 'button', 'aria-label': 'Reminders', onclick: () => { if (!R.ringing.length) return CC.toast('No reminders are waiting.'); ui.trayOpen = !ui.trayOpen; R.render(); } }, CC.icon('bell'), h('span', { class: 'badge', id: 'bell-badge', hidden: true })),
       h('button', { class: 'ib primary only-d', type: 'button', 'aria-label': 'Add something', onclick: add }, CC.icon('plus')));
     view.replaceChildren(...[].concat(CC.views[ui.view]()).filter(Boolean));
@@ -48,7 +48,7 @@
   CC.applyLook(); CC.render(); R.start();
   CC.idb.open().then(() => CC.idb.all('photos')).then((recs) => {
     CC.uploads = (recs || []).filter((r) => r && r.blob).map((r) => ({ id: r.id, url: URL.createObjectURL(r.blob) }));
-    if (CC.uploads.length) CC.render();
+    if (CC.uploads.length) { CC.bg.apply(); CC.render(); }
   });
   const sp = $('#splash'); if (sp) { sp.style.opacity = 0; setTimeout(() => sp.remove(), 450); }
 })(window.CC);

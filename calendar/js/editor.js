@@ -8,7 +8,7 @@
 
   CC.openPicker = (title, onPick) => CC.openModal(CC.sheet(title,
     h('div', { class: 'row' }, h('button', { class: 'btn primary small', type: 'button', onclick: () => CC.pickFiles('image/*', async (f) => { const id = await CC.addPhotos(f); if (id) { CC.closeModal(); onPick(id); } }) }, 'Use a new photo of mine')),
-    CC.uploads.length ? null : h('p', { class: 'hint', text: 'You have not added any photos yet.' }),
+    CC.pool().length ? null : h('p', { class: 'hint', text: 'No pictures are switched on yet.' }),
     h('div', { class: 'photos' }, CC.pool().map((id) => h('button', { class: 'ph', type: 'button', 'aria-label': 'Use this photo', onclick: () => { CC.closeModal(); onPick(id); } }, h('img', { src: CC.srcOf(id), alt: '' }))))));
 
   // ---------- appointment / task / reminder ----------

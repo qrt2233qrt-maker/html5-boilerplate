@@ -67,15 +67,18 @@ window.CC = {};
   function load(key, fallback) { try { const v = localStorage.getItem(key); return v == null ? fallback : JSON.parse(v); } catch (e) { return fallback; } }
   function store(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); return true; } catch (e) { return false; } }
   const DEF = {
-    name: 'My Calendar', density: 'cozy', motion: 'auto', weekStart: 0, h24: false, monthPhotos: {}, dayPhotos: {}, calView: 'week',
-    bg: { exp: 'luxe', dim: 18 }, doneMsg: 'Well done, My baby ❤️',
+    name: 'My Calendar', look: 'midnight', accent: '', font: 'elegant', density: 'cozy', motion: 'auto', weekStart: 0, h24: false,
+    monthPhotos: {}, dayPhotos: {}, hidden: [], calView: 'week',
+    bg: { exp: 'luxe', dim: 18, secs: 20, fade: 1.6, blur: 0, bright: 100 }, doneMsg: 'Well done, My baby ❤️',
     sound: 'chime', vol: 70, quiet: { on: false, from: '22:00', to: '07:00' }, allDayAt: '09:00',
     defRems: [], defNag: 0, dayFrom: 8, dayTo: 22, pomo: { work: 25, brk: 5, long: 15 }, pomoLog: {}
   };
   const S = CC.S = Object.assign({}, DEF, load('cc.settings', {}));
-  S.bg = { exp: S.bg && S.bg.exp === 'cosmic' ? 'cosmic' : 'luxe', dim: S.bg && S.bg.exp ? S.bg.dim : DEF.bg.dim };
+  S.bg = Object.assign({}, DEF.bg, S.bg); if (!['luxe', 'cosmic', 'photos'].includes(S.bg.exp)) S.bg.exp = 'luxe';
+  if (!['midnight', 'amber', 'blush'].includes(S.look)) S.look = 'midnight';
+  if (!['elegant', 'round', 'modern'].includes(S.font)) S.font = 'elegant';
+  if (!Array.isArray(S.hidden)) S.hidden = [];
   S.quiet = Object.assign({}, DEF.quiet, S.quiet); S.pomo = Object.assign({}, DEF.pomo, S.pomo);
-  for (const k of ['look', 'accent', 'font', 'hidden']) delete S[k]; // the old theme system is gone
   CC.saveS = () => store('cc.settings', S);
   CC.alerts = load('cc.alerts', {});
   CC.saveAlerts = () => store('cc.alerts', CC.alerts);
@@ -195,12 +198,29 @@ window.CC = {};
     all: (st) => idb.run(st, 'readonly', (s) => s.getAll()), get: (st, id) => idb.run(st, 'readonly', (s) => s.get(id)),
     put: (st, rec) => idb.run(st, 'readwrite', (s) => s.put(rec)), del: (st, id) => idb.run(st, 'readwrite', (s) => s.delete(id))
   };
+  function scene(a, b, inner) { return 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="' + a + '"/><stop offset="1" stop-color="' + b + '"/></linearGradient></defs><rect width="400" height="300" fill="url(#g)"/>' + inner + '</svg>'); }
+  const cloud = (x, y, s, f) => '<g fill="' + f + '" transform="translate(' + x + ' ' + y + ') scale(' + s + ')"><circle cx="0" cy="0" r="22"/><circle cx="26" cy="-12" r="26"/><circle cx="54" cy="0" r="22"/><rect x="-22" y="0" width="98" height="22" rx="11"/></g>';
+  const face = (x, y, c) => '<g fill="' + c + '"><circle cx="' + (x - 16) + '" cy="' + y + '" r="5"/><circle cx="' + (x + 16) + '" cy="' + y + '" r="5"/></g><path d="M' + (x - 8) + ' ' + (y + 10) + ' q8 8 16 0" fill="none" stroke="' + c + '" stroke-width="3" stroke-linecap="round"/><g fill="#ff9db8" opacity=".7"><circle cx="' + (x - 30) + '" cy="' + (y + 10) + '" r="7"/><circle cx="' + (x + 30) + '" cy="' + (y + 10) + '" r="7"/></g>';
+  const stars = (pts, f) => pts.map((p) => '<circle cx="' + p[0] + '" cy="' + p[1] + '" r="' + p[2] + '" fill="' + f + '"/>').join('');
+  const petals = (x, y, n, f) => Array.from({ length: n }, (_, i) => '<ellipse cx="' + x + '" cy="' + (y - 52) + '" rx="20" ry="36" fill="' + f + '" transform="rotate(' + (i * 360 / n) + ' ' + x + ' ' + y + ')"/>').join('');
+  const STARTERS = CC.STARTERS = [
+    { id: 's-moon', name: 'Sleepy moon', src: scene('#3b2f5c', '#7a5c9a', stars([[60, 50, 3], [120, 110, 2], [330, 60, 3], [300, 150, 2], [90, 200, 2], [350, 230, 3], [180, 40, 2]], '#fff6c9') + '<circle cx="200" cy="140" r="70" fill="#fff1b8"/><circle cx="232" cy="118" r="62" fill="#5a457b"/>' + cloud(60, 250, 1.2, '#cdb9ee') + cloud(250, 262, 1.4, '#e3d4fb')) },
+    { id: 's-sun', name: 'Sunny clouds', src: scene('#ffd6e6', '#ffeccf', '<circle cx="290" cy="90" r="46" fill="#ffd27a"/>' + cloud(70, 120, 1.3, '#ffffff') + cloud(210, 190, 1.6, '#ffffff') + cloud(40, 250, 1, '#fff5fa')) },
+    { id: 's-berry', name: 'Strawberry', src: scene('#c9f0df', '#e9fbe6', '<path d="M200 262 C112 214 100 120 200 104 C300 120 288 214 200 262Z" fill="#ff7a93"/>' + stars([[168, 150, 4], [200, 172, 4], [232, 150, 4], [182, 204, 4], [220, 206, 4], [200, 232, 4]], '#fff3c4') + '<g fill="#5fbf7a"><ellipse cx="170" cy="104" rx="30" ry="13" transform="rotate(-25 170 104)"/><ellipse cx="230" cy="104" rx="30" ry="13" transform="rotate(25 230 104)"/><ellipse cx="200" cy="92" rx="13" ry="26"/></g>' + face(200, 176, '#7a2b3e')) },
+    { id: 's-cat', name: 'Peach cat', src: scene('#ffe0cc', '#ffd0d8', '<g fill="#fff7ef"><polygon points="128,120 140,48 196,96"/><polygon points="272,120 260,48 204,96"/><circle cx="200" cy="160" r="88"/></g><g fill="#ffb8c8"><polygon points="142,104 147,68 174,92"/><polygon points="258,104 253,68 226,92"/></g>' + face(200, 156, '#5b4250') + '<g stroke="#5b4250" stroke-width="2.5" stroke-linecap="round"><path d="M120 160h-34M122 174l-30 10M280 160h34M278 174l30 10"/></g>') },
+    { id: 's-daisy', name: 'Daisy', src: scene('#fff3c2', '#ffe3d1', petals(200, 150, 10, '#ffffff') + '<circle cx="200" cy="150" r="40" fill="#ffc94d"/>' + face(200, 146, '#7a5320')) },
+    { id: 's-shroom', name: 'Mushroom', src: scene('#e4d6fb', '#f6e1f1', '<rect x="164" y="150" width="72" height="104" rx="30" fill="#fff7ef"/><path d="M92 170 A108 96 0 0 1 308 170 Z" fill="#ff8fa8"/>' + stars([[150, 120, 14], [214, 98, 11], [258, 136, 13], [186, 146, 7]], '#fff3f6') + face(200, 204, '#6a4a55')) },
+    { id: 's-bunny', name: 'Bunny', src: scene('#cfe7fb', '#e6ecff', '<g fill="#ffffff"><ellipse cx="166" cy="76" rx="22" ry="62"/><ellipse cx="234" cy="76" rx="22" ry="62"/><circle cx="200" cy="184" r="82"/></g><g fill="#ffc2d4"><ellipse cx="166" cy="80" rx="10" ry="42"/><ellipse cx="234" cy="80" rx="10" ry="42"/></g>' + face(200, 178, '#4f4a66')) },
+    { id: 's-bow', name: 'Rainbow', src: scene('#fff6ea', '#ffeaf2', '<g fill="none" stroke-width="20"><path d="M70 236 A130 130 0 0 1 330 236" stroke="#ff9db8"/><path d="M90 236 A110 110 0 0 1 310 236" stroke="#ffcf8a"/><path d="M110 236 A90 90 0 0 1 290 236" stroke="#a9e3cd"/><path d="M130 236 A70 70 0 0 1 270 236" stroke="#b9c8ff"/></g>' + cloud(30, 236, 1.1, '#ffffff') + cloud(280, 236, 1.1, '#ffffff')) },
+    { id: 's-heart', name: 'Hearts', src: scene('#ffd3e2', '#f9c7ef', '<path d="M200 244 C96 176 122 84 200 132 C278 84 304 176 200 244Z" fill="#ff7fa6"/><path d="M92 106 C60 84 70 56 92 70 C114 56 124 84 92 106Z" fill="#ffffff" opacity=".85"/><path d="M318 96 C296 80 302 60 318 70 C334 60 340 80 318 96Z" fill="#ffffff" opacity=".85"/>' + face(200, 170, '#7a2b4a')) },
+    { id: 's-planet', name: 'Night planet', src: scene('#1f1a33', '#3c2b4f', stars([[50, 60, 2], [110, 30, 3], [340, 50, 2], [360, 180, 3], [70, 220, 3], [150, 260, 2], [290, 250, 2], [220, 40, 2]], '#ffe9b0') + '<ellipse cx="200" cy="158" rx="130" ry="28" fill="none" stroke="#f2b872" stroke-width="10" transform="rotate(-14 200 158)"/><circle cx="200" cy="150" r="66" fill="#f7a8c8"/>' + face(200, 146, '#5a2f4a')) }
+  ];
   CC.uploads = [];
-  CC.pool = () => CC.uploads.map((u) => u.id);
-  CC.srcOf = (id) => { const u = CC.uploads.find((p) => p.id === id); return u ? u.url : ''; };
-  CC.hasPhoto = (id) => !!id && CC.uploads.some((p) => p.id === id);
-  CC.randomPhoto = (not) => { const p = CC.pool(); if (!p.length) return null; const q = p.length > 1 ? p.filter((id) => id !== not) : p; return q[Math.floor(Math.random() * q.length)]; };
-  CC.monthPhoto = (key) => { if (CC.hasPhoto(S.monthPhotos[key])) return S.monthPhotos[key]; const p = CC.pool(); if (!p.length) return null; let n = 0; for (const ch of key) n = (n * 31 + ch.charCodeAt(0)) % 9973; return p[n % p.length]; };
+  CC.pool = () => STARTERS.filter((p) => !S.hidden.includes(p.id)).map((p) => p.id).concat(CC.uploads.map((u) => u.id));
+  CC.srcOf = (id) => { const s = STARTERS.find((p) => p.id === id); if (s) return s.src; const u = CC.uploads.find((p) => p.id === id); return u ? u.url : STARTERS[0].src; };
+  CC.hasPhoto = (id) => !!id && (STARTERS.some((p) => p.id === id) || CC.uploads.some((p) => p.id === id));
+  CC.randomPhoto = (not) => { let p = CC.pool(); if (!p.length) p = STARTERS.map((s) => s.id); const q = p.length > 1 ? p.filter((id) => id !== not) : p; return q[Math.floor(Math.random() * q.length)]; };
+  CC.monthPhoto = (key) => { if (CC.hasPhoto(S.monthPhotos[key])) return S.monthPhotos[key]; let p = CC.pool(); if (!p.length) p = STARTERS.map((s) => s.id); let n = 0; for (const ch of key) n = (n * 31 + ch.charCodeAt(0)) % 9973; return p[n % p.length]; };
   CC.shrink = (file, max) => new Promise((res) => {
     const img = new Image(), u = URL.createObjectURL(file);
     img.onload = () => { const k = Math.min(1, (max || 1600) / Math.max(img.width, img.height)), c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(u); c.toBlob((b) => res(b || file), 'image/jpeg', 0.85); };
