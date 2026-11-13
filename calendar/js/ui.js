@@ -66,7 +66,7 @@
     CC.bg.apply();
   };
 
-  // ---------- backgrounds: Midnight Luxury (light 2D lighting) and Cosmic Universe (3D) ----------
+  // ---------- backgrounds: soft lighting, the Purple clouds picture, or a slideshow of the user's photos ----------
   const par = { x: 0, y: 0 };
   addEventListener('pointermove', (e) => { if (e.pointerType === 'mouse') { par.x = e.clientX / innerWidth * 2 - 1; par.y = e.clientY / innerHeight * 2 - 1; } }, { passive: true });
   const STARS = Array.from({ length: 130 }, () => ({ x: Math.random(), y: Math.random(), z: .3 + Math.random() * .7, sp: .4 + Math.random() * 1.4, ph: Math.random() * 6 }));
@@ -84,44 +84,29 @@
     for (const s of STARS) { c.globalAlpha = (starry ? .9 : .5) * (.25 + .75 * Math.abs(Math.sin(t * s.sp * .6 + s.ph))); c.beginPath(); c.arc(s.x * w + p.x * s.z * 10, s.y * hg + p.y * s.z * 6, s.z * (starry ? 1.7 : 1.2), 0, 7); c.fill(); }
     c.globalAlpha = 1;
   }
-  let raf = 0, lastT = 0, world = null, loading = false, glFailed = false;
+  let raf = 0, lastT = 0;
   function size2d() { const c = $('#bg-c'), k = Math.min(1.25, devicePixelRatio || 1); c.width = Math.round(innerWidth * k); c.height = Math.round(innerHeight * k); }
   function frame(ts) {
-    raf = 0; if (document.hidden || S.bg.exp === 'photos') return;
-    const m = CC.motion(), cosmic = S.bg.exp === 'cosmic' && world, gap = cosmic ? (CC.isMobile() ? 33 : 22) : 60;
-    if (ts - lastT >= gap) {
-      lastT = ts; const t = m === 'off' ? 40 : ts / 1000 * (m === 'subtle' ? .5 : 1);
-      if (cosmic) world.frame(t, m); else { const c = $('#bg-c'); luxe(c.getContext('2d'), c.width, c.height, t, m === 'full' ? par : { x: 0, y: 0 }, S.bg.exp === 'cosmic'); }
-    }
+    raf = 0; if (document.hidden || S.bg.exp !== 'luxe') return;
+    const m = CC.motion();
+    if (ts - lastT >= 60) { lastT = ts; const c = $('#bg-c'); luxe(c.getContext('2d'), c.width, c.height, m === 'off' ? 40 : ts / 1000 * (m === 'subtle' ? .5 : 1), m === 'full' ? par : { x: 0, y: 0 }, false); }
     if (m !== 'off') raf = requestAnimationFrame(frame);
   }
   const kick = () => { if (!raf) { lastT = 0; raf = requestAnimationFrame(frame); } };
-  function startWorld() {
-    if (world || loading || glFailed) return;
-    loading = true;
-    new Promise((res, rej) => { if (window.THREE) return res(); const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'; s.onload = res; s.onerror = rej; document.head.append(s); })
-      .then(() => { world = CC.cosmos($('#bg-gl'), CC.isMobile(), () => par); world.resize(); })
-      .catch(() => { glFailed = true; })
-      .then(() => { loading = false; CC.bg.apply(); if (CC.ui.view === 'settings') CC.render(); });
-  }
   let slideT = 0, slideI = 0, flip = false;
   const slides = () => { const u = CC.uploads.map((x) => x.id); return u.length ? u : CC.pool(); };
-  function showSlide() { const l = slides(); if (!l.length) return; const els = document.querySelectorAll('.bg-ph'), el = els[flip ? 1 : 0], other = els[flip ? 0 : 1]; el.style.backgroundImage = 'url("' + CC.srcOf(l[slideI % l.length]) + '")'; el.classList.add('on'); other.classList.remove('on'); flip = !flip; slideI++; }
+  function showSlide() { const l = slides(); if (!l.length) return; const els = document.querySelectorAll('#bg-media .bg-ph'), el = els[flip ? 1 : 0], other = els[flip ? 0 : 1]; el.style.backgroundImage = 'url("' + CC.srcOf(l[slideI % l.length]) + '")'; el.classList.add('on'); other.classList.remove('on'); flip = !flip; slideI++; }
   CC.bg = {
-    failed: () => glFailed,
     apply() {
-      const c2 = $('#bg-c'), gl = $('#bg-gl'), media = $('#bg-media'), b = S.bg; if (!c2) return;
-      pal = null; clearInterval(slideT);
-      const cosmic = b.exp === 'cosmic', photos = b.exp === 'photos';
-      if (cosmic && !world) startWorld();
-      const live = cosmic && !!world;
-      gl.hidden = !live; media.hidden = !photos; c2.hidden = live || photos; if (!live && !photos) size2d();
-      media.style.filter = 'blur(' + b.blur + 'px) brightness(' + b.bright + '%)'; media.style.setProperty('--fade', b.fade + 's');
+      const c2 = $('#bg-c'), clouds = $('#bg-clouds'), media = $('#bg-media'), b = S.bg; if (!c2) return;
+      pal = null; clearInterval(slideT); cancelAnimationFrame(raf); raf = 0;
+      clouds.hidden = b.exp !== 'clouds'; media.hidden = b.exp !== 'photos'; c2.hidden = b.exp !== 'luxe';
+      const f = 'blur(' + b.blur + 'px) brightness(' + b.bright + '%)'; media.style.filter = f; clouds.style.filter = f; media.style.setProperty('--fade', b.fade + 's');
       $('#bg-dim').style.opacity = b.dim / 100;
-      if (photos) { showSlide(); if (slides().length > 1) slideT = setInterval(showSlide, Math.max(4, b.secs) * 1000); }
-      cancelAnimationFrame(raf); raf = 0; if (!photos) kick();
+      if (b.exp === 'photos') { showSlide(); if (slides().length > 1) slideT = setInterval(showSlide, Math.max(4, b.secs) * 1000); }
+      if (b.exp === 'luxe') { size2d(); kick(); }
     }
   };
-  addEventListener('resize', () => { if (world) world.resize(); size2d(); kick(); });
+  addEventListener('resize', () => { if (S.bg.exp === 'luxe') { size2d(); kick(); } });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) kick(); });
 })(window.CC);
