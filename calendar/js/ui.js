@@ -71,17 +71,25 @@
   };
 
   // ---------- backgrounds: a built-in picture (chosen in CSS by data-exp) or a slideshow of the user's photos ----------
-  let slideT = 0, slideI = 0, flip = false;
-  const slides = () => { const u = CC.uploads.map((x) => x.id); return u.length ? u : CC.pool(); };
-  function showSlide() { const l = slides(); if (!l.length) return; const els = document.querySelectorAll('#bg-media .bg-ph'), el = els[flip ? 1 : 0], other = els[flip ? 0 : 1]; el.style.backgroundImage = 'url("' + CC.srcOf(l[slideI % l.length]) + '")'; el.classList.add('on'); other.classList.remove('on'); flip = !flip; slideI++; }
+  let slideT = 0, flip = false, lastSlide = '';
+  /** Which of the user's photos the background uses: the one they chose, or all of them in random order. */
+  const slides = () => { const u = CC.uploads.map((x) => x.id); return S.bg.picMode === 'one' && u.includes(S.bg.pick) ? [S.bg.pick] : u; };
+  function showSlide() {
+    const l = slides(); if (!l.length) return;
+    const rest = l.length > 1 ? l.filter((id) => id !== lastSlide) : l, id = rest[Math.floor(Math.random() * rest.length)]; if (id === lastSlide) return; lastSlide = id;
+    const els = document.querySelectorAll('#bg-media .bg-ph'), el = els[flip ? 1 : 0], other = els[flip ? 0 : 1];
+    el.style.backgroundImage = 'url("' + CC.srcOf(id) + '")'; el.classList.add('on'); other.classList.remove('on'); flip = !flip;
+  }
   CC.bg = {
     apply() {
       const pic = $('#bg-clouds'), media = $('#bg-media'), b = S.bg; if (!pic) return;
       clearInterval(slideT);
-      pic.hidden = b.exp === 'photos'; media.hidden = b.exp !== 'photos';
+      const mine = b.exp === 'photos' && CC.uploads.length > 0; // with no photos added yet, Pink sunset stands in
+      document.documentElement.setAttribute('data-exp', b.exp === 'photos' && !mine ? 'sunset' : b.exp);
+      pic.hidden = mine; media.hidden = !mine;
       const f = 'blur(' + b.blur + 'px) brightness(' + b.bright + '%)'; media.style.filter = f; pic.style.filter = f; media.style.setProperty('--fade', b.fade + 's');
       $('#bg-dim').style.opacity = b.dim / 100;
-      if (b.exp === 'photos') { showSlide(); if (slides().length > 1) slideT = setInterval(showSlide, Math.max(4, b.secs) * 1000); }
+      if (mine) { showSlide(); if (slides().length > 1) slideT = setInterval(showSlide, Math.max(4, b.secs) * 1000); }
     }
   };
 })(window.CC);

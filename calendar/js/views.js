@@ -81,19 +81,12 @@
 
   // ---------- the chosen day's schedule ----------
   CC.dayPanel = (date) => {
-    const hasPhotos = CC.pool().length > 0;
-    if (hasPhotos && !CC.hasPhoto(ui.dayShown)) ui.dayShown = CC.hasPhoto(S.dayPhotos[date]) ? S.dayPhotos[date] : CC.randomPhoto(null);
-    const pinned = S.dayPhotos[date] === ui.dayShown, occs = CC.visible(date, date).sort(CC.byTime), notes = CC.D.notes.filter((n) => n.date === date && !n.deleted && !n.archived);
+    const occs = CC.visible(date, date).sort(CC.byTime), notes = CC.D.notes.filter((n) => n.date === date && !n.deleted && !n.archived);
     const free = CC.freeSlots(date), freeMin = free.reduce((a, s) => a + s[1] - s[0], 0), clashes = CC.conflicts(date), t = CC.today();
     const fix = (pair) => { const o = pair[1], slot = CC.freeSlots(date, o.it.id).find((s) => s[1] - s[0] >= o.dur && s[0] !== CC.toMin(o.time)); return slot && h('button', { class: 'btn small', type: 'button', onclick: () => { CC.move(o, date, CC.fromMin(slot[0])); CC.toast('Moved to ' + CC.fmtTime(CC.fromMin(slot[0]))); CC.render(); } }, 'Move "' + o.it.title + '" to ' + CC.fmtTime(CC.fromMin(slot[0]))); };
     return h('aside', { class: 'glass card fade-in', 'aria-label': 'Schedule for ' + CC.longDate(date) },
       h('div', { class: 'row between' }, h('div', { class: 'col', style: { gap: '2px' } }, h('span', { class: 'tag', text: date === t ? 'Today' : date === CC.shift(t, 1) ? 'Tomorrow' : CC.WD[CC.fromYmd(date).getDay()] }), h('h2', { text: CC.fromYmd(date).toLocaleDateString(undefined, { day: 'numeric', month: 'long' }) })),
         S.calView !== 'day' && h('button', { class: 'btn small', type: 'button', onclick: () => CC.setCal('day') }, CC.icon('clock'), 'Timeline')),
-      hasPhotos && h('div', { class: 'day-photo', style: { '--img': 'url("' + CC.srcOf(ui.dayShown) + '")' } }, h('img', { src: CC.srcOf(ui.dayShown), alt: '' }),
-        h('div', { class: 'on-photo-row' },
-          h('button', { class: 'on-photo', type: 'button', onclick: () => { delete S.dayPhotos[date]; CC.saveS(); ui.dayShown = CC.randomPhoto(ui.dayShown); CC.render(); } }, 'Shuffle'),
-          h('button', { class: 'on-photo', type: 'button', 'aria-pressed': String(pinned), onclick: () => { if (pinned) delete S.dayPhotos[date]; else S.dayPhotos[date] = ui.dayShown; CC.saveS(); CC.render(); CC.toast(pinned ? 'This day is random again' : 'Photo kept for this day'); } }, pinned ? 'Kept ✓' : 'Keep'),
-          h('button', { class: 'on-photo', type: 'button', onclick: () => CC.openPicker('Photo for ' + CC.shortDate(date), (id) => { S.dayPhotos[date] = id; ui.dayShown = id; CC.saveS(); CC.render(); }) }, 'Choose'))),
       clashes.map((p) => h('div', { class: 'banner' }, CC.icon('warn'), h('div', { class: 'col', style: { gap: '6px' } }, h('span', { text: '"' + p[0].it.title + '" and "' + p[1].it.title + '" overlap.' }), fix(p)))),
       list(occs, false, 'Nothing planned. Tap + to add something.'),
       notes.map((n) => h('button', { class: 'note-inline', type: 'button', style: n.color ? { '--c': n.color } : null, onclick: () => CC.openNote(n) }, h('span', { class: 'tag', text: 'Note' }), h('div', { class: 'item-title', text: n.title || 'Untitled note' }), n.body && h('div', { class: 'item-meta', text: n.body.slice(0, 140) }))),
@@ -167,10 +160,6 @@
   function monthView() {
     const a = CC.fromYmd(ui.sel), y = a.getFullYear(), m = a.getMonth(), key = y + '-' + CC.pad(m + 1), today = CC.today();
     const count = new Date(y, m + 1, 0).getDate(), lead = (new Date(y, m, 1).getDay() - S.weekStart + 7) % 7, by = group(CC.visible(key + '-01', key + '-' + CC.pad(count)));
-    const hero = CC.pool().length ? h('div', { class: 'hero', style: { '--img': 'url("' + CC.srcOf(CC.monthPhoto(key)) + '")' } }, h('img', { src: CC.srcOf(CC.monthPhoto(key)), alt: '' }), h('div', { class: 'scrim' }),
-      h('div', { class: 'on-photo-row' },
-        h('button', { class: 'on-photo', type: 'button', onclick: () => { S.monthPhotos[key] = CC.randomPhoto(CC.monthPhoto(key)); CC.saveS(); CC.render(); } }, 'Shuffle'),
-        h('button', { class: 'on-photo', type: 'button', onclick: () => CC.openPicker('Photo for ' + CC.MONTHS[m], (id) => { S.monthPhotos[key] = id; CC.saveS(); CC.render(); }) }, 'Choose'))) : null;
     const grid = h('div', { class: 'mgrid glass ' + ui.dir });
     for (let i = 0; i < 7; i++) grid.append(h('div', { class: 'wd', text: CC.WD[(i + S.weekStart) % 7] }));
     for (let i = 0; i < lead; i++) grid.append(h('div', {}));
@@ -186,7 +175,7 @@
         h('span', { class: 'dots' }, l.slice(0, 4).map((o) => h('span', { class: 'dot', style: cstyle(o.it) }))),
         h('span', { class: 'evs' }, l.slice(0, 2).map((o) => h('span', { class: 'mchip ' + o.st, style: cstyle(o.it), draggable: 'true', ondragstart: (e) => { e.dataTransfer.setData('text/plain', o.key); e.dataTransfer.effectAllowed = 'move'; }, text: (o.time ? CC.fmtTime(o.time).replace(':00', '').replace(' ', '').toLowerCase() + ' ' : '') + o.it.title })), l.length > 2 && h('span', { class: 'more', text: '+' + (l.length - 2) + ' more' }))));
     }
-    return [dateNav(CC.MONTHS[m], String(y)), h('div', { class: 'cal-layout split' }, h('div', { class: 'col' }, hero, grid), CC.dayPanel(ui.sel))];
+    return [dateNav(CC.MONTHS[m], String(y)), h('div', { class: 'cal-layout split' }, grid, CC.dayPanel(ui.sel))];
   }
 
   // ---------- year ----------
