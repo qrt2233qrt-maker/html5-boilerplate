@@ -65,10 +65,10 @@
     if (S.accent) r.style.setProperty('--accent', S.accent); else r.style.removeProperty('--accent');
     // how solid the panels are; the light theme keeps more fill so dark text stays readable
     const p = S.look === 'blush' ? Math.max(S.panel, 62) : S.panel;
-    r.style.setProperty('--panel', p + '%'); r.style.setProperty('--panel2', Math.round(p * .8) + '%'); r.style.setProperty('--panel3', Math.min(100, p + 25) + '%'); r.style.setProperty('--pblur', S.pblur + 'px');
-    r.style.setProperty('--tsh', S.look === 'blush' || p > 55 ? 'none' : '0 1px 3px rgba(0, 0, 0, .75)');
+    r.style.setProperty('--panel', p + '%'); r.style.setProperty('--panel2', Math.max(50, Math.round(p * .9)) + '%'); r.style.setProperty('--panel3', Math.max(78, Math.min(100, p + 25)) + '%'); r.style.setProperty('--pblur', S.pblur + 'px');
+    r.style.setProperty('--tsh', S.look === 'blush' ? '0 0 6px rgba(255, 255, 255, .9)' : '0 1px 2px rgba(0, 0, 0, .9), 0 0 10px rgba(0, 0, 0, .5)');
     // highlight fills: once they are mostly clear, their label switches to the normal text colour so it stays readable
-    r.style.setProperty('--hl', S.hl); r.style.setProperty('--on-fill', S.hl < 60 ? 'var(--ink)' : 'var(--on-accent)');
+    r.style.setProperty('--hl', S.hl); r.style.setProperty('--on-fill', S.hl < 70 ? 'var(--ink)' : 'var(--on-accent)');
     CC.bg.apply();
   };
 

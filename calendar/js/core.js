@@ -69,7 +69,7 @@ window.CC = {};
   const DEF = {
     name: 'My Calendar', look: 'midnight', accent: '', font: 'elegant', density: 'cozy', motion: 'auto', weekStart: 0, h24: false,
     monthPhotos: {}, dayPhotos: {}, hidden: [], calView: 'week',
-    bg: { exp: 'sunset', dim: 0, secs: 20, fade: 1.6, blur: 0, bright: 100, picMode: 'shuffle', pick: '' }, panel: 30, pblur: 6, seeThrough: 2, hl: 100, doneMsg: 'Well done, My baby ❤️',
+    bg: { exp: 'sunset', dim: 0, secs: 20, fade: 1.6, blur: 0, bright: 100, picMode: 'shuffle', pick: '' }, panel: 55, pblur: 14, seeThrough: 3, hl: 100, doneMsg: 'Well done, My baby ❤️',
     sound: 'chime', vol: 70, quiet: { on: false, from: '22:00', to: '07:00' }, allDayAt: '09:00',
     defRems: [], defNag: 0, dayFrom: 8, dayTo: 22, pomo: { work: 25, brk: 5, long: 15 }, pomoLog: {}
   };
@@ -78,7 +78,7 @@ window.CC = {};
   if (!['midnight', 'amber', 'blush'].includes(S.look)) S.look = 'midnight';
   if (!['elegant', 'round', 'modern'].includes(S.font)) S.font = 'elegant';
   if (!Array.isArray(S.hidden)) S.hidden = [];
-  if (load('cc.settings', {}).seeThrough !== 2) { S.bg.dim = 0; S.panel = 30; S.pblur = 6; S.seeThrough = 2; } // one-time switch to see-through panels
+  if (load('cc.settings', {}).seeThrough !== 3) { S.bg.dim = 0; S.panel = Math.max(55, +S.panel || 0); S.pblur = Math.max(14, +S.pblur || 0); S.seeThrough = 3; } // one-time move to panels that are see-through but keep text readable
   S.quiet = Object.assign({}, DEF.quiet, S.quiet); S.pomo = Object.assign({}, DEF.pomo, S.pomo);
   CC.saveS = () => store('cc.settings', S);
   CC.alerts = load('cc.alerts', {});
