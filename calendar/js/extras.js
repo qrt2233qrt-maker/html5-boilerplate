@@ -81,6 +81,8 @@
         b.exp === 'photos' && slider('sl-fade', 'Fade between pictures', 0.4, 4, 0.2, b.fade, ' s', (v) => { b.fade = v; }),
         b.exp !== 'luxe' && slider('sl-blur', 'Blur', 0, 20, 1, b.blur, ' px', (v) => { b.blur = v; }),
         b.exp !== 'luxe' && slider('sl-bright', 'Brightness', 40, 130, 5, b.bright, '%', (v) => { b.bright = v; }),
+        slider('sl-panel', 'How solid the panels are (lower shows more of the background)', 0, 100, 2, S.panel, '%', (v) => { S.panel = v; }),
+        slider('sl-pblur', 'Frosting behind the panels', 0, 24, 1, S.pblur, ' px', (v) => { S.pblur = v; }),
         slider('sl-dim', 'Colour wash over the background (keeps text easy to read)', 0, 80, 2, b.dim, '%', (v) => { b.dim = v; }),
         field('Animation', CC.chipRow([['auto', 'Match my device'], ['full', 'Full'], ['subtle', 'Gentle'], ['off', 'Off']], S.motion, (v) => setS(() => { S.motion = v; }))),
         h('p', { class: 'hint', text: 'Gentle slows everything down. Off stops all movement.' })),

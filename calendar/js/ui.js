@@ -63,6 +63,10 @@
     if (S.font === 'elegant') r.removeAttribute('data-font'); else r.setAttribute('data-font', S.font);
     r.setAttribute('data-density', S.density); r.setAttribute('data-motion', CC.motion()); r.setAttribute('data-exp', S.bg.exp);
     if (S.accent) r.style.setProperty('--accent', S.accent); else r.style.removeProperty('--accent');
+    // how solid the panels are; the light theme keeps more fill so dark text stays readable
+    const p = S.look === 'blush' ? Math.max(S.panel, 62) : S.panel;
+    r.style.setProperty('--panel', p + '%'); r.style.setProperty('--panel2', Math.round(p * .8) + '%'); r.style.setProperty('--panel3', Math.min(100, p + 25) + '%'); r.style.setProperty('--pblur', S.pblur + 'px');
+    r.style.setProperty('--tsh', S.look === 'blush' || p > 55 ? 'none' : '0 1px 3px rgba(0, 0, 0, .75)');
     CC.bg.apply();
   };
 
