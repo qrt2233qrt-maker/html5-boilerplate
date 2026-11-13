@@ -58,8 +58,6 @@
   const field = (label, ...kids) => h('div', { class: 'field' }, h('span', { class: 'lab', text: label }), kids);
   const setS = (fn, rerender) => { fn(); CC.saveS(); CC.applyLook(); if (rerender !== false) CC.render(); };
   const slider = (id, label, min, max, stepv, val, unit, on) => { const out = h('span', { class: 'hint', text: val + unit }); return h('div', { class: 'field' }, h('div', { class: 'row between' }, h('label', { for: id, text: label }), out), h('input', { type: 'range', id, min, max, step: stepv, value: val, oninput: (e) => { out.textContent = e.target.value + unit; setS(() => on(+e.target.value), false); } })); };
-  const THEMES = [['auto', 'Match my device', 'linear-gradient(135deg,#fdeef4 50%,#0e1030 50%)'], ['blossom', 'Blossom', 'linear-gradient(135deg,#f08fb8,#a99bf5)'], ['sand', 'Sand', 'linear-gradient(135deg,#e6dccb,#c99a5b)'], ['aurora', 'Aurora', 'linear-gradient(135deg,#0e1030,#8fd3ff)'], ['ember', 'Ember', 'linear-gradient(135deg,#3b2420,#f2b872)'], ['ocean', 'Ocean', 'linear-gradient(135deg,#06202b,#5fe0c8)'], ['midnight', 'Midnight', 'linear-gradient(135deg,#0a0a12,#b79bff)']];
-  const ACCENTS = ['', '#f08fb8', '#c9b6f5', '#f9c3a0', '#8fe3c4', '#8fd3ff', '#f6dd8d', '#f2b872'];
   function backup() { return JSON.stringify({ app: 'cozy-calendar', v: 2, at: new Date().toISOString(), data: D, settings: S }); }
   async function restore(text) {
     let p; try { p = JSON.parse(text); } catch (e) { return CC.toast('That is not a backup from this calendar.'); }
@@ -72,28 +70,22 @@
     const b = S.bg, perm = R.perm(), eg = D.items.some((i) => i.example) || D.notes.some((n) => n.example);
     const permText = { granted: 'Notifications are on for this browser.', denied: 'Notifications are blocked. Allow them for this page in your browser or phone settings.', default: 'Notifications are off. Turn them on to get a pop-up outside this page.', unsupported: 'This browser or window does not allow notifications. The reminder panel and sounds inside the calendar still work.' }[perm];
     return h('div', { class: 'dash fade-in' },
-      card('Look',
-        h('div', { class: 'field' }, h('label', { for: 'set-name', text: 'Calendar name' }), h('input', { type: 'text', id: 'set-name', maxlength: '30', value: S.name, oninput: (e) => { S.name = e.target.value; CC.saveS(); $('#cal-name').textContent = S.name || 'My Calendar'; } })),
-        field('Theme', h('div', { class: 'chips' }, THEMES.map((t) => h('button', { class: 'swatch', type: 'button', 'aria-pressed': String(S.look === t[0]), style: { background: t[2] }, onclick: () => setS(() => { S.look = t[0]; }) }, t[1])))),
-        field('Highlight colour', h('div', { class: 'chips' }, ACCENTS.map((a) => h('button', { class: 'sw', type: 'button', 'aria-label': a ? 'Colour ' + a : 'Theme colour', 'aria-pressed': String(S.accent === a), style: { background: a || 'var(--tint)' }, onclick: () => setS(() => { S.accent = a; }) })), h('input', { type: 'color', id: 'set-accent', 'aria-label': 'Any colour', value: S.accent || '#f08fb8', onchange: (e) => setS(() => { S.accent = e.target.value; }) }))),
-        field('Font', CC.chipRow([['round', 'Rounded'], ['modern', 'Modern'], ['elegant', 'Elegant']], S.font, (v) => setS(() => { S.font = v; }))),
-        field('Spacing', CC.chipRow([['cozy', 'Roomy'], ['compact', 'Compact']], S.density, (v) => setS(() => { S.density = v; }))),
+      card('Experience',
+        h('div', { class: 'row', role: 'group', 'aria-label': 'Experience' }, [['luxe', 'Midnight Luxury', 'Calm midnight lighting. Easiest on the battery.'], ['cosmic', 'Cosmic Universe', 'A living 3D universe: stars, planets, a black hole, shooting stars.']].map((x) => h('button', { class: 'exp ' + x[0], type: 'button', 'aria-pressed': String(b.exp === x[0]), onclick: () => setS(() => { b.exp = x[0]; }) }, h('b', { text: x[1] }), h('span', { text: x[2] })))),
+        b.exp === 'cosmic' && CC.bg.failed() && h('p', { class: 'warnc', text: 'The 3D universe could not start in this browser, so a lighter starfield is showing instead.' }),
+        slider('sl-dim', 'Darken the background behind the calendar', 0, 70, 2, b.dim, '%', (v) => { b.dim = v; }),
         field('Animation', CC.chipRow([['auto', 'Match my device'], ['full', 'Full'], ['subtle', 'Gentle'], ['off', 'Off']], S.motion, (v) => setS(() => { S.motion = v; }))),
+        h('p', { class: 'hint', text: 'Gentle slows everything and makes shooting stars rare. Off shows a still picture and stops all movement.' })),
+      card('Personal touches',
+        h('div', { class: 'field' }, h('label', { for: 'set-name', text: 'Calendar name' }), h('input', { type: 'text', id: 'set-name', maxlength: '30', value: S.name, oninput: (e) => { S.name = e.target.value; CC.saveS(); $('#cal-name').textContent = S.name || 'My Calendar'; } })),
+        h('div', { class: 'field' }, h('label', { for: 'set-done', text: 'Message when I complete something' }), h('input', { type: 'text', id: 'set-done', maxlength: '60', value: S.doneMsg, placeholder: 'Leave empty for no message', oninput: (e) => { S.doneMsg = e.target.value; CC.saveS(); } })),
+        h('div', { class: 'row' }, h('button', { class: 'btn small', type: 'button', onclick: (e) => CC.celebrate(e.clientX, e.clientY) }, 'Preview it')),
+        field('Spacing', CC.chipRow([['cozy', 'Roomy'], ['compact', 'Compact']], S.density, (v) => setS(() => { S.density = v; }))),
         h('div', { class: 'two' }, field('Week starts on', CC.chipRow([[0, 'Sunday'], [1, 'Monday']], S.weekStart, (v) => setS(() => { S.weekStart = v; }))), field('Clock', CC.chipRow([[false, '12-hour'], [true, '24-hour']], S.h24, (v) => setS(() => { S.h24 = v; }))))),
-      card('Background',
-        field('Show', CC.chipRow([['theme', 'Plain theme colours'], ['scene', 'Animated scene'], ['photos', 'My photo slideshow']], b.mode, (v) => setS(() => { b.mode = v; }))),
-        b.mode === 'scene' && field('Scene', CC.chipRow(CC.SCENES, b.scene, (v) => setS(() => { b.scene = v; }))),
-        b.mode === 'photos' && h('p', { class: 'hint', text: CC.uploads.length ? 'Showing your ' + CC.uploads.length + ' photo' + (CC.uploads.length === 1 ? '' : 's') + ', one after another.' : 'You have not added photos yet, so the starter pictures are showing. Add yours under Photos below.' }),
-        b.mode === 'photos' && slider('sl-secs', 'Each photo stays for', 5, 120, 5, b.secs, ' s', (v) => { b.secs = v; }),
-        b.mode === 'photos' && slider('sl-fade', 'Fade between photos', 0.4, 4, 0.2, b.fade, ' s', (v) => { b.fade = v; }),
-        b.mode !== 'theme' && slider('sl-blur', 'Blur', 0, 20, 1, b.blur, ' px', (v) => { b.blur = v; }),
-        b.mode !== 'theme' && slider('sl-bright', 'Brightness', 40, 130, 5, b.bright, '%', (v) => { b.bright = v; }),
-        b.mode !== 'theme' && slider('sl-dim', 'Theme colour wash (keeps text easy to read)', 0, 85, 5, b.dim, '%', (v) => { b.dim = v; })),
       card('Photos',
-        h('div', { class: 'row' }, h('button', { class: 'btn primary small', type: 'button', onclick: () => CC.pickFiles('image/*', async (f) => { await CC.addPhotos(f); CC.bg.apply(); CC.render(); }) }, 'Add your photos')),
-        h('p', { class: 'hint', text: 'Months, days and the slideshow use these. Your photos are shrunk to save space and stay on this device.' }),
-        CC.uploads.length ? h('div', { class: 'photos' }, CC.uploads.map((u) => h('div', { class: 'ph' }, h('img', { src: u.url, alt: 'Your photo' }), h('button', { class: 'on-photo', type: 'button', onclick: async () => { await CC.idb.del('photos', u.id); URL.revokeObjectURL(u.url); CC.uploads = CC.uploads.filter((x) => x.id !== u.id); CC.bg.apply(); CC.render(); CC.toast('Photo removed'); } }, 'Remove')))) : null,
-        h('h3', { text: 'Starter set' }), h('div', { class: 'photos' }, CC.STARTERS.map((p) => { const off = S.hidden.includes(p.id); return h('div', { class: 'ph' }, h('img', { src: p.src, alt: p.name }), h('button', { class: 'on-photo', type: 'button', 'aria-pressed': String(!off), onclick: () => setS(() => { S.hidden = off ? S.hidden.filter((x) => x !== p.id) : S.hidden.concat(p.id); }) }, off ? 'Off' : 'On')); }))),
+        h('div', { class: 'row' }, h('button', { class: 'btn primary small', type: 'button', onclick: () => CC.pickFiles('image/*', async (f) => { await CC.addPhotos(f); CC.render(); }) }, 'Add your photos')),
+        h('p', { class: 'hint', text: 'Your photos appear on the month page and on each day, picked at random, and you can keep or choose one per day. They are shrunk to save space and stay on this device.' }),
+        CC.uploads.length ? h('div', { class: 'photos' }, CC.uploads.map((u) => h('div', { class: 'ph' }, h('img', { src: u.url, alt: 'Your photo' }), h('button', { class: 'on-photo', type: 'button', onclick: async () => { await CC.idb.del('photos', u.id); URL.revokeObjectURL(u.url); CC.uploads = CC.uploads.filter((x) => x.id !== u.id); CC.render(); CC.toast('Photo removed'); } }, 'Remove')))) : null),
       card('Reminders',
         h('p', { class: perm === 'granted' ? 'okc' : 'warnc', text: permText }),
         h('div', { class: 'row' }, perm === 'default' && h('button', { class: 'btn primary small', type: 'button', onclick: async () => { await R.askPerm(); CC.render(); } }, 'Turn on notifications'),
@@ -121,7 +113,7 @@
           h('button', { class: 'btn small', type: 'button', onclick: () => CC.pickFiles('.json,application/json', async (f) => { if (f[0]) restore(await f[0].text()); }) }, 'Restore from a file')),
         h('div', { class: 'field' }, h('label', { for: 'bk-in', text: 'Or paste a backup here' }), h('textarea', { id: 'bk-in', rows: '2' })),
         h('div', { class: 'row' }, h('button', { class: 'btn small', type: 'button', onclick: () => { const v = $('#bk-in').value.trim(); if (v) restore(v); else CC.toast('Paste a backup into the box first.'); } }, 'Restore pasted backup'))),
-      card('Keyboard shortcuts', h('div', { class: 'col', style: { gap: '6px' } }, [['N', 'Add something'], ['/', 'Search'], ['T', 'Go to today'], ['D W M Y', 'Day, week, month, year'], ['A', 'Agenda'], ['← →', 'Previous and next'], ['Esc', 'Close']].map((k) => h('div', { class: 'row' }, h('kbd', { text: k[0] }), k[1]))),
+      card('Keyboard shortcuts', h('div', { class: 'col', style: { gap: '6px' } }, [['N', 'Add something'], ['/', 'Search'], ['T', 'Go to today'], ['D W M Y', 'Day, week, month, year'], ['A', 'Agenda'], ['← →', 'Previous and next (or swipe on a phone)'], ['Esc', 'Close']].map((k) => h('div', { class: 'row' }, h('kbd', { text: k[0] }), k[1]))),
         eg && h('div', { class: 'row' }, h('button', { class: 'btn small', type: 'button', onclick: () => { D.items = D.items.filter((i) => !i.example); D.notes = D.notes.filter((n) => !n.example); CC.save(); R.tick(); CC.render(); CC.toast('Examples removed'); } }, 'Remove the example items'))));
   };
 })(window.CC);

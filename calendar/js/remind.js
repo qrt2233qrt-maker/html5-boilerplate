@@ -53,7 +53,7 @@
   const st = (o) => CC.alerts[o.key] || (CC.alerts[o.key] = { f: [], last: 0, sn: 0, ack: 0 });
   R.snooze = (o, mins) => { const a = st(o); a.sn = Date.now() + mins * 6e4; a.resn = true; CC.saveAlerts(); CC.toast('Snoozed for ' + CC.fmtDur(mins)); R.tick(); };
   R.dismiss = (o) => { st(o).ack = Date.now(); CC.saveAlerts(); R.tick(); };
-  R.done = (o, ev) => { CC.setStatus(o, 'done'); if (ev) CC.sparks(ev.clientX, ev.clientY); CC.toast('Done'); R.tick(); CC.render(); };
+  R.done = (o, ev) => CC.complete(o, ev);
   R.postpone = (o, date, time) => { CC.move(o, date, time); CC.toast('Moved to ' + CC.shortDate(date) + (time ? ', ' + CC.fmtTime(time) : '')); R.tick(); CC.render(); };
   R.menu = (o, ev) => {
     const plus = (m) => { const d = new Date(CC.startOf(o).getTime() + m * 6e4); return [CC.ymd(d), o.time ? CC.pad(d.getHours()) + ':' + CC.pad(d.getMinutes()) : '']; };

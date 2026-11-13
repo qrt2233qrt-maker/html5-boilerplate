@@ -1,11 +1,11 @@
 <title>Cozy Calendar</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Fredoka:wght@400;500;600&family=Inter:wght@400;600;700&family=Nunito:wght@400;600;700&family=Space+Grotesk:wght@500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,600&family=Manrope:wght@400;600;700;800&display=swap">
 <link rel="stylesheet" href="css/app.css">
 
 <div id="bg" aria-hidden="true">
-  <div id="bg-media" hidden><div class="bg-ph"></div><div class="bg-ph"></div></div>
-  <canvas id="bg-c" hidden></canvas>
+  <canvas id="bg-c"></canvas>
+  <canvas id="bg-gl" hidden></canvas>
   <div id="bg-dim"></div>
 </div>
 <div id="splash" aria-hidden="true"><i></i></div>
@@ -19,7 +19,9 @@
   </div>
 </div>
 
+<button id="fab" type="button" aria-label="Add something"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
 <div id="focus" hidden></div>
+<div id="cheer" role="status" hidden></div>
 <div class="modal" id="modal"></div>
 <div class="modal" id="confirm"></div>
 <div id="menu" class="glass" role="menu" hidden></div>
@@ -27,6 +29,7 @@
 <input class="vh" type="file" id="file-in" multiple tabindex="-1" aria-label="Choose files">
 
 <script src="js/core.js"></script>
+<script src="js/cosmos.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/remind.js"></script>
 <script src="js/views.js"></script>

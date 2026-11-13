@@ -8,6 +8,7 @@
 
   CC.openPicker = (title, onPick) => CC.openModal(CC.sheet(title,
     h('div', { class: 'row' }, h('button', { class: 'btn primary small', type: 'button', onclick: () => CC.pickFiles('image/*', async (f) => { const id = await CC.addPhotos(f); if (id) { CC.closeModal(); onPick(id); } }) }, 'Use a new photo of mine')),
+    CC.uploads.length ? null : h('p', { class: 'hint', text: 'You have not added any photos yet.' }),
     h('div', { class: 'photos' }, CC.pool().map((id) => h('button', { class: 'ph', type: 'button', 'aria-label': 'Use this photo', onclick: () => { CC.closeModal(); onPick(id); } }, h('img', { src: CC.srcOf(id), alt: '' }))))));
 
   // ---------- appointment / task / reminder ----------
@@ -75,7 +76,7 @@
       o && h('div', { class: 'field' }, h('span', { class: 'lab', text: 'Attached notes' }), linked.map((n) => h('button', { class: 'note-inline', type: 'button', style: n.color ? { '--c': n.color } : null, onclick: () => CC.openNote(n) }, n.title || 'Untitled note')), h('div', { class: 'row' }, act('Attach a new note', () => CC.openNote(null, { linked: d.id, title: d.title })))),
       err,
       o && h('div', { class: 'chips' },
-        o.st !== 'done' ? act('✓ Done', (e) => { CC.setStatus(o, 'done'); CC.sparks(e.clientX, e.clientY); finish('Done'); }) : act('Not done', () => { CC.setStatus(o, 'active'); finish(); }),
+        o.st !== 'done' ? act('✓ Done', (e) => { CC.closeModal(); CC.complete(o, e); }) : act('Not done', () => { CC.setStatus(o, 'active'); finish(); }),
         o.st === 'active' && act('Missed', () => { CC.setStatus(o, 'missed'); finish('Marked as missed'); }),
         o.st !== 'canceled' ? act('Cancel it', () => { CC.setStatus(o, 'canceled'); finish('Canceled. Find it under Agenda, Canceled.'); }, 'danger') : act('Restore', () => { CC.setStatus(o, 'active'); if (o.it.status === 'canceled') { o.it.status = 'active'; CC.save(); } finish('Restored'); }),
         o.it.rr && o.st !== 'canceled' && act('Cancel all repeats', () => { CC.setStatus(o, 'canceledAll'); finish('All repeats canceled'); }, 'danger'),
