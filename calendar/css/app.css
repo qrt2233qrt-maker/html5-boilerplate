@@ -47,6 +47,9 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
 :root[data-motion="subtle"] #bg-clouds .bg-ph { animation: drift 90s ease-in-out infinite alternate; }
 #bg-dim { position: absolute; inset: 0; background: var(--veil); }
 #bg-media, #bg-clouds { position: absolute; inset: -24px; }
+/* Purple clouds: the tall picture on upright screens, the wide one on sideways and desktop screens */
+#bg-clouds .bg-ph { background-image: url(../img/purple-clouds.webp); }
+@media (orientation: landscape) { #bg-clouds .bg-ph { background-image: url(../img/purple-clouds-wide.webp); } }
 .bg-ph { position: absolute; inset: 0; background-size: cover; background-position: center; opacity: 0; transition: opacity var(--fade, 1.6s) ease; }
 .bg-ph.on { opacity: 1; }
 :root[data-motion="full"] .bg-ph.on { animation: drift 40s ease-in-out infinite alternate; }
