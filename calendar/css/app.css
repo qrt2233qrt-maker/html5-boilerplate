@@ -1,12 +1,12 @@
-/* Midnight Cosmic. One identity: near-black navy and violet depth, amber for anything you act on or complete.
+/* Midnight purple is the base theme: near-black navy and violet depth, with lighter purple for anything you act on or complete.
    Layout: the universe sits behind everything; frosted panels float over it.
    Phone: compact header, week strip, one column of schedule cards, floating tab bar and an amber add button.
    Wide: a slim rail on the left, calendar and the chosen day side by side. */
 :root {
   --bg: #07060f; --bg2: #130b2a; --glass: rgba(20, 14, 44, .62); --solid: #120d26; --tint: rgba(170, 150, 255, .08); --tint2: rgba(170, 150, 255, .14);
   --ink: #f4effc; --muted: #a9a0c6; --line: rgba(196, 178, 255, .16);
-  --accent: #f5b352; --accent2: #ffd98a; --violet: #8b6cff; --navy: #2a3a9c; --on-accent: #1d1203;
-  --late: #ff8fa3; --ok: #f5b352; --warn: #ffc56b;
+  --accent: #a488ff; --accent2: #d3c4ff; --violet: #6f86ff; --navy: #2a3a9c; --on-accent: #140b33;
+  --late: #ff8fa3; --ok: #a488ff; --warn: #e3b5ff;
   --shadow: 0 18px 50px rgba(0, 0, 0, .55), inset 0 1px 0 rgba(255, 255, 255, .06);
   --glow: 0 0 0 1px color-mix(in srgb, var(--accent) 75%, transparent), 0 0 26px color-mix(in srgb, var(--accent) 32%, transparent);
   --display: "Cormorant Garamond", "Iowan Old Style", Georgia, serif;
@@ -270,7 +270,7 @@ button.ph[aria-pressed="true"] { outline: 3px solid var(--accent); outline-offse
 :root:not([data-motion="off"]) .sheet { animation: sheetIn .3s cubic-bezier(.2, .9, .3, 1.05); }
 @keyframes sheetIn { from { opacity: 0; transform: translateY(34px) scale(.98); } }
 .sheet-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.banner { border-radius: 14px; padding: 10px 12px; background: rgba(255, 197, 107, .1); border: 1px solid rgba(255, 197, 107, .3); font-size: .88rem; display: flex; gap: 9px; align-items: flex-start; }
+.banner { border-radius: 14px; padding: 10px 12px; background: color-mix(in srgb, var(--warn) 10%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent); font-size: .88rem; display: flex; gap: 9px; align-items: flex-start; }
 details.more-opts > summary { font-weight: 700; cursor: pointer; padding: 6px 0; min-height: 36px; }
 details.more-opts[open] > summary { margin-bottom: 8px; }
 #tray { padding: 14px; display: flex; flex-direction: column; gap: 9px; border-color: color-mix(in srgb, var(--accent) 40%, transparent); }

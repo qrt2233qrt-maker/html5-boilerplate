@@ -91,7 +91,7 @@ window.CC = {};
 
   let D = load('cc.data', null);
   if (!D) {
-    D = { v: 2, items: [], notes: [], cats: [{ id: 'pers', name: 'Personal', color: '#f08fb8' }, { id: 'school', name: 'School', color: '#a99bf5' }, { id: 'health', name: 'Health', color: '#5fcfa8' }, { id: 'work', name: 'Work', color: '#6fb6f5' }, { id: 'fam', name: 'Family', color: '#f5b072' }] };
+    D = { v: 2, items: [], notes: [], cats: [{ id: 'pers', name: 'Personal', color: '#f08fb8' }, { id: 'school', name: 'School', color: '#a99bf5' }, { id: 'health', name: 'Health', color: '#5fcfa8' }, { id: 'work', name: 'Work', color: '#6fb6f5' }, { id: 'fam', name: 'Family', color: '#c9a6ff' }] };
     const old = load('cc.items', null);
     if (old) { // bring over what was saved by the first version of this calendar
       for (const o of old) {
@@ -112,6 +112,7 @@ window.CC = {};
       D.notes = [Object.assign(CC.blankNote(), { title: 'Weekend ideas', body: 'Picnic if it is sunny, baking if it rains.', date: d(0), cat: 'pers', color: '#f08fb8', checklist: [{ t: 'Buy strawberries', done: false }, { t: 'Charge the camera', done: true }], example: true })];
     }
   }
+  for (const c of D.cats) if (c.id === 'fam' && c.color === '#f5b072') c.color = '#c9a6ff'; // the default Family colour was orange
   CC.D = D;
   CC.save = () => { if (!store('cc.data', D)) CC.toast && CC.toast('Could not save. This browser is blocking storage.'); };
   CC.cat = (id) => D.cats.find((c) => c.id === id);
