@@ -128,9 +128,12 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 
 /* month */
 .cal-layout { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); align-items: start; }
-.hero { position: relative; height: clamp(130px, 30vw, 210px); border-radius: var(--r); overflow: hidden; box-shadow: var(--shadow); background: var(--solid); border: 1px solid var(--line); }
-.hero img, .day-photo img, .ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.scrim { position: absolute; inset: 0; background: linear-gradient(to top, rgba(7, 6, 15, .8), rgba(7, 6, 15, 0) 62%); }
+.hero { position: relative; width: min(100%, 380px); aspect-ratio: 1; align-self: center; border-radius: var(--r); overflow: hidden; box-shadow: var(--shadow); background: var(--solid); border: 1px solid var(--line); }
+/* photos sit whole inside a square; a blurred copy of the same photo fills the space around them */
+.hero img, .day-photo img { position: relative; width: 100%; height: 100%; object-fit: contain; display: block; }
+.hero::before, .day-photo::before { content: ""; position: absolute; inset: -24px; background: var(--img) center / cover; filter: blur(22px) brightness(.55); }
+.ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.scrim { position: absolute; inset: 0; background: linear-gradient(to top, rgba(7, 6, 15, .55), rgba(7, 6, 15, 0) 30%); pointer-events: none; }
 .on-photo-row { position: absolute; right: 10px; bottom: 10px; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .on-photo { border: 1px solid rgba(255, 255, 255, .25); background: rgba(10, 8, 24, .7); color: var(--ink); padding: 6px 12px; border-radius: 999px; font-weight: 700; font-size: .8rem; }
 .mgrid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; padding: 12px; perspective: 1200px; }
@@ -152,7 +155,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } }
 
 /* schedule cards */
-.day-photo { position: relative; height: clamp(140px, 40vw, 200px); border-radius: 18px; overflow: hidden; background: var(--solid); }
+.day-photo { position: relative; width: min(100%, 380px); aspect-ratio: 1; align-self: center; border-radius: 18px; overflow: hidden; background: var(--solid); }
 .items { display: flex; flex-direction: column; gap: 9px; list-style: none; margin: 0; padding: 0; }
 .item { display: flex; gap: 11px; align-items: flex-start; background: linear-gradient(120deg, var(--well), var(--tint)); border: 1px solid var(--line); border-left: 4px solid var(--c, var(--violet)); border-radius: 18px; padding: 12px; }
 :root[data-motion="full"] .item { transition: transform .18s ease, box-shadow .18s ease; }
@@ -225,7 +228,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .cl-row input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--accent); flex: none; }
 .att { display: flex; flex-wrap: wrap; gap: 8px; }
 .att .ph { width: 92px; }
-.ph { position: relative; aspect-ratio: 4 / 3; border-radius: 14px; overflow: hidden; background: var(--tint); border: 0; padding: 0; width: 100%; }
+.ph { position: relative; aspect-ratio: 1; border-radius: 14px; overflow: hidden; background: var(--tint); border: 0; padding: 0; width: 100%; }
 .ph .on-photo { position: absolute; right: 4px; top: 4px; padding: 3px 9px; }
 .photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
 

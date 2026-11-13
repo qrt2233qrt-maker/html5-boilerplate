@@ -89,7 +89,7 @@
     return h('aside', { class: 'glass card fade-in', 'aria-label': 'Schedule for ' + CC.longDate(date) },
       h('div', { class: 'row between' }, h('div', { class: 'col', style: { gap: '2px' } }, h('span', { class: 'tag', text: date === t ? 'Today' : date === CC.shift(t, 1) ? 'Tomorrow' : CC.WD[CC.fromYmd(date).getDay()] }), h('h2', { text: CC.fromYmd(date).toLocaleDateString(undefined, { day: 'numeric', month: 'long' }) })),
         S.calView !== 'day' && h('button', { class: 'btn small', type: 'button', onclick: () => CC.setCal('day') }, CC.icon('clock'), 'Timeline')),
-      hasPhotos && h('div', { class: 'day-photo' }, h('img', { src: CC.srcOf(ui.dayShown), alt: '' }),
+      hasPhotos && h('div', { class: 'day-photo', style: { '--img': 'url("' + CC.srcOf(ui.dayShown) + '")' } }, h('img', { src: CC.srcOf(ui.dayShown), alt: '' }),
         h('div', { class: 'on-photo-row' },
           h('button', { class: 'on-photo', type: 'button', onclick: () => { delete S.dayPhotos[date]; CC.saveS(); ui.dayShown = CC.randomPhoto(ui.dayShown); CC.render(); } }, 'Shuffle'),
           h('button', { class: 'on-photo', type: 'button', 'aria-pressed': String(pinned), onclick: () => { if (pinned) delete S.dayPhotos[date]; else S.dayPhotos[date] = ui.dayShown; CC.saveS(); CC.render(); CC.toast(pinned ? 'This day is random again' : 'Photo kept for this day'); } }, pinned ? 'Kept ✓' : 'Keep'),
@@ -167,7 +167,7 @@
   function monthView() {
     const a = CC.fromYmd(ui.sel), y = a.getFullYear(), m = a.getMonth(), key = y + '-' + CC.pad(m + 1), today = CC.today();
     const count = new Date(y, m + 1, 0).getDate(), lead = (new Date(y, m, 1).getDay() - S.weekStart + 7) % 7, by = group(CC.visible(key + '-01', key + '-' + CC.pad(count)));
-    const hero = CC.pool().length ? h('div', { class: 'hero' }, h('img', { src: CC.srcOf(CC.monthPhoto(key)), alt: '' }), h('div', { class: 'scrim' }),
+    const hero = CC.pool().length ? h('div', { class: 'hero', style: { '--img': 'url("' + CC.srcOf(CC.monthPhoto(key)) + '")' } }, h('img', { src: CC.srcOf(CC.monthPhoto(key)), alt: '' }), h('div', { class: 'scrim' }),
       h('div', { class: 'on-photo-row' },
         h('button', { class: 'on-photo', type: 'button', onclick: () => { S.monthPhotos[key] = CC.randomPhoto(CC.monthPhoto(key)); CC.saveS(); CC.render(); } }, 'Shuffle'),
         h('button', { class: 'on-photo', type: 'button', onclick: () => CC.openPicker('Photo for ' + CC.MONTHS[m], (id) => { S.monthPhotos[key] = id; CC.saveS(); CC.render(); }) }, 'Choose'))) : null;
