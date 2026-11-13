@@ -207,7 +207,7 @@
     const pct = all.length ? Math.round(all.filter((o) => o.st === 'done').length / all.length * 100) : 0;
     const sec = (title, l, cls) => l.length ? [h('h3', { class: cls || '', text: title + ' (' + l.length + ')' }), list(l, true, '')] : null;
     return h('section', { class: 'glass card fade-in' }, h('div', { class: 'row between' }, h('h2', { text: 'Tasks' }), h('button', { class: 'btn primary small', type: 'button', onclick: () => CC.openEditor(null, { kind: 'task', date: t }) }, CC.icon('plus'), 'Add task')),
-      all.length ? h('div', { class: 'col', style: { gap: '4px' } }, h('div', { class: 'meter' }, h('i', { style: { width: pct + '%' } })), h('span', { class: 'hint', text: pct + '% of your tasks are done. Sorted by priority, then due date.' })) : h('div', { class: 'empty', text: 'No tasks yet. Add one and it shows here and on its due day.' }),
+      all.length ? h('div', { class: 'col', style: { gap: '4px' } }, h('div', { class: 'meter' }, h('i', { style: { width: pct + '%' } })), h('span', { class: 'hint', text: all.filter((o) => o.st === 'done').length + ' done out of ' + all.length + '. Sorted by priority, then due date.' })) : h('div', { class: 'empty', text: 'No tasks yet. Add one and it shows here and on its due day.' }),
       sec('Overdue', late, 'late'), sec('Due today', now), sec('Coming up', next), sec('Done', done));
   };
 })(window.CC);
