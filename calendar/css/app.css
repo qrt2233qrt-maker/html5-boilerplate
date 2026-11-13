@@ -50,8 +50,11 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
 /* Purple clouds: the tall picture on upright screens, the wide one on sideways and desktop screens */
 #bg-clouds .bg-ph { background-image: url(../img/purple-clouds.webp); }
 @media (orientation: landscape) { #bg-clouds .bg-ph { background-image: url(../img/purple-clouds-wide.webp); } }
+/* Pink sunset is square, so one picture serves both: phones show the middle strip, wide screens the band around the horizon */
+:root[data-exp="sunset"] #bg-clouds .bg-ph { background-image: url(../img/pink-sunset.webp); background-position: center 62%; }
 :root[data-exp="lights"] #bg-clouds .bg-ph { background-image: url(../img/northern-lights.webp); }
 @media (orientation: landscape) { :root[data-exp="lights"] #bg-clouds .bg-ph { background-image: url(../img/northern-lights-wide.webp); } }
+@media (orientation: landscape) { :root[data-exp="sunset"] #bg-clouds .bg-ph { background-image: url(../img/pink-sunset.webp); } }
 .bg-ph { position: absolute; inset: 0; background-size: cover; background-position: center; opacity: 0; transition: opacity var(--fade, 1.6s) ease; }
 .bg-ph.on { opacity: 1; }
 :root[data-motion="full"] .bg-ph.on { animation: drift 40s ease-in-out infinite alternate; }
@@ -245,7 +248,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .ring circle { fill: none; stroke-width: 7; stroke: var(--tint2); }
 .ring circle.p { stroke: var(--accent); stroke-linecap: round; transition: stroke-dashoffset .5s linear; filter: drop-shadow(0 0 8px color-mix(in srgb, var(--accent) 60%, transparent)); }
 .exp { flex: 1 1 200px; min-height: 120px; border-radius: 20px; border: 1px solid var(--line); padding: 14px; text-align: left; display: flex; flex-direction: column; justify-content: flex-end; gap: 4px; position: relative; overflow: hidden; }
-.exp.luxe { background: radial-gradient(120% 120% at 15% 0%, #33208a 0%, #150c32 45%, #07060f 100%); }
+.exp.sunset { background: linear-gradient(rgba(30, 10, 30, .1), rgba(30, 10, 30, .5)), url(../img/pink-sunset.webp) center 62% / cover; }
 .exp.clouds { background: linear-gradient(rgba(7, 6, 15, .15), rgba(7, 6, 15, .55)), url(../img/purple-clouds.webp) center / cover; }
 .exp.lights { background: linear-gradient(rgba(4, 10, 18, .1), rgba(4, 10, 18, .55)), url(../img/northern-lights-wide.webp) center / cover; }
 .exp b { font-family: var(--display); font-size: 1.35rem; } .exp span { font-size: .82rem; color: var(--muted); }

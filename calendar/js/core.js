@@ -69,12 +69,12 @@ window.CC = {};
   const DEF = {
     name: 'My Calendar', look: 'midnight', accent: '', font: 'elegant', density: 'cozy', motion: 'auto', weekStart: 0, h24: false,
     monthPhotos: {}, dayPhotos: {}, hidden: [], calView: 'week',
-    bg: { exp: 'luxe', dim: 0, secs: 20, fade: 1.6, blur: 0, bright: 100 }, panel: 30, pblur: 6, seeThrough: 2, doneMsg: 'Well done, My baby ❤️',
+    bg: { exp: 'sunset', dim: 0, secs: 20, fade: 1.6, blur: 0, bright: 100 }, panel: 30, pblur: 6, seeThrough: 2, doneMsg: 'Well done, My baby ❤️',
     sound: 'chime', vol: 70, quiet: { on: false, from: '22:00', to: '07:00' }, allDayAt: '09:00',
     defRems: [], defNag: 0, dayFrom: 8, dayTo: 22, pomo: { work: 25, brk: 5, long: 15 }, pomoLog: {}
   };
   const S = CC.S = Object.assign({}, DEF, load('cc.settings', {}));
-  S.bg = Object.assign({}, DEF.bg, S.bg); if (S.bg.exp === 'cosmic') S.bg.exp = 'clouds'; if (!['luxe', 'clouds', 'lights', 'photos'].includes(S.bg.exp)) S.bg.exp = 'luxe';
+  S.bg = Object.assign({}, DEF.bg, S.bg); if (S.bg.exp === 'cosmic') S.bg.exp = 'clouds'; if (!['sunset', 'clouds', 'lights', 'photos'].includes(S.bg.exp)) S.bg.exp = 'sunset';
   if (!['midnight', 'amber', 'blush'].includes(S.look)) S.look = 'midnight';
   if (!['elegant', 'round', 'modern'].includes(S.font)) S.font = 'elegant';
   if (!Array.isArray(S.hidden)) S.hidden = [];

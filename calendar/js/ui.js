@@ -70,47 +70,18 @@
     CC.bg.apply();
   };
 
-  // ---------- backgrounds: soft lighting, the Purple clouds picture, or a slideshow of the user's photos ----------
-  const par = { x: 0, y: 0 };
-  addEventListener('pointermove', (e) => { if (e.pointerType === 'mouse') { par.x = e.clientX / innerWidth * 2 - 1; par.y = e.clientY / innerHeight * 2 - 1; } }, { passive: true });
-  const STARS = Array.from({ length: 130 }, () => ({ x: Math.random(), y: Math.random(), z: .3 + Math.random() * .7, sp: .4 + Math.random() * 1.4, ph: Math.random() * 6 }));
-  const rgbOf = (v) => { const m = /^#([0-9a-f]{6})$/i.exec(v.trim()); if (!m) return '140,110,255'; const n = parseInt(m[1], 16); return (n >> 16) + ',' + ((n >> 8) & 255) + ',' + (n & 255); };
-  const glow = (c, x, y, r, rgb, a) => { const g = c.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, 'rgba(' + rgb + ',' + a + ')'); g.addColorStop(1, 'rgba(' + rgb + ',0)'); c.fillStyle = g; c.fillRect(x - r, y - r, r * 2, r * 2); };
-  let pal = null;
-  function luxe(c, w, hg, t, p, starry) {
-    if (!pal) { const cs = getComputedStyle(document.documentElement), v = (n) => cs.getPropertyValue(n).trim(); pal = { bg: v('--bg'), bg2: v('--bg2'), a: rgbOf(v('--accent')), v: rgbOf(v('--violet')), n: rgbOf(v('--navy')), ink: v('--ink'), light: S.look === 'blush' }; }
-    const g = c.createLinearGradient(0, 0, 0, hg); g.addColorStop(0, pal.bg2); g.addColorStop(.6, pal.bg); g.addColorStop(1, pal.bg); c.fillStyle = g; c.fillRect(0, 0, w, hg);
-    const m = Math.max(w, hg), k = pal.light ? .6 : 1;
-    glow(c, w * (.18 + .05 * Math.sin(t * .05)) + p.x * 12, hg * .1, m * .75, pal.v, .34 * k);
-    glow(c, w * (.9 + .04 * Math.cos(t * .04)) - p.x * 10, hg * .5, m * .6, pal.n, .34 * k);
-    glow(c, w * (.55 + .08 * Math.sin(t * .03 + 2)), hg * 1.08, m * .55, pal.a, pal.light ? .3 : .13);
-    c.fillStyle = pal.light ? 'rgb(' + pal.a + ')' : pal.ink;
-    for (const s of STARS) { c.globalAlpha = (starry ? .9 : .5) * (.25 + .75 * Math.abs(Math.sin(t * s.sp * .6 + s.ph))); c.beginPath(); c.arc(s.x * w + p.x * s.z * 10, s.y * hg + p.y * s.z * 6, s.z * (starry ? 1.7 : 1.2), 0, 7); c.fill(); }
-    c.globalAlpha = 1;
-  }
-  let raf = 0, lastT = 0;
-  function size2d() { const c = $('#bg-c'), k = Math.min(1.25, devicePixelRatio || 1); c.width = Math.round(innerWidth * k); c.height = Math.round(innerHeight * k); }
-  function frame(ts) {
-    raf = 0; if (document.hidden || S.bg.exp !== 'luxe') return;
-    const m = CC.motion();
-    if (ts - lastT >= 60) { lastT = ts; const c = $('#bg-c'); luxe(c.getContext('2d'), c.width, c.height, m === 'off' ? 40 : ts / 1000 * (m === 'subtle' ? .5 : 1), m === 'full' ? par : { x: 0, y: 0 }, false); }
-    if (m !== 'off') raf = requestAnimationFrame(frame);
-  }
-  const kick = () => { if (!raf) { lastT = 0; raf = requestAnimationFrame(frame); } };
+  // ---------- backgrounds: a built-in picture (chosen in CSS by data-exp) or a slideshow of the user's photos ----------
   let slideT = 0, slideI = 0, flip = false;
   const slides = () => { const u = CC.uploads.map((x) => x.id); return u.length ? u : CC.pool(); };
   function showSlide() { const l = slides(); if (!l.length) return; const els = document.querySelectorAll('#bg-media .bg-ph'), el = els[flip ? 1 : 0], other = els[flip ? 0 : 1]; el.style.backgroundImage = 'url("' + CC.srcOf(l[slideI % l.length]) + '")'; el.classList.add('on'); other.classList.remove('on'); flip = !flip; slideI++; }
   CC.bg = {
     apply() {
-      const c2 = $('#bg-c'), clouds = $('#bg-clouds'), media = $('#bg-media'), b = S.bg; if (!c2) return;
-      pal = null; clearInterval(slideT); cancelAnimationFrame(raf); raf = 0;
-      clouds.hidden = b.exp !== 'clouds' && b.exp !== 'lights'; media.hidden = b.exp !== 'photos'; c2.hidden = b.exp !== 'luxe';
-      const f = 'blur(' + b.blur + 'px) brightness(' + b.bright + '%)'; media.style.filter = f; clouds.style.filter = f; media.style.setProperty('--fade', b.fade + 's');
+      const pic = $('#bg-clouds'), media = $('#bg-media'), b = S.bg; if (!pic) return;
+      clearInterval(slideT);
+      pic.hidden = b.exp === 'photos'; media.hidden = b.exp !== 'photos';
+      const f = 'blur(' + b.blur + 'px) brightness(' + b.bright + '%)'; media.style.filter = f; pic.style.filter = f; media.style.setProperty('--fade', b.fade + 's');
       $('#bg-dim').style.opacity = b.dim / 100;
       if (b.exp === 'photos') { showSlide(); if (slides().length > 1) slideT = setInterval(showSlide, Math.max(4, b.secs) * 1000); }
-      if (b.exp === 'luxe') { size2d(); kick(); }
     }
   };
-  addEventListener('resize', () => { if (S.bg.exp === 'luxe') { size2d(); kick(); } });
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) kick(); });
 })(window.CC);
