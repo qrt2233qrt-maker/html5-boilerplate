@@ -67,6 +67,8 @@
     const p = S.look === 'blush' ? Math.max(S.panel, 62) : S.panel;
     r.style.setProperty('--panel', p + '%'); r.style.setProperty('--panel2', Math.round(p * .8) + '%'); r.style.setProperty('--panel3', Math.min(100, p + 25) + '%'); r.style.setProperty('--pblur', S.pblur + 'px');
     r.style.setProperty('--tsh', S.look === 'blush' || p > 55 ? 'none' : '0 1px 3px rgba(0, 0, 0, .75)');
+    // highlight fills: once they are mostly clear, their label switches to the normal text colour so it stays readable
+    r.style.setProperty('--hl', S.hl); r.style.setProperty('--on-fill', S.hl < 60 ? 'var(--ink)' : 'var(--on-accent)');
     CC.bg.apply();
   };
 

@@ -69,7 +69,7 @@ window.CC = {};
   const DEF = {
     name: 'My Calendar', look: 'midnight', accent: '', font: 'elegant', density: 'cozy', motion: 'auto', weekStart: 0, h24: false,
     monthPhotos: {}, dayPhotos: {}, hidden: [], calView: 'week',
-    bg: { exp: 'sunset', dim: 0, secs: 20, fade: 1.6, blur: 0, bright: 100, picMode: 'shuffle', pick: '' }, panel: 30, pblur: 6, seeThrough: 2, doneMsg: 'Well done, My baby ❤️',
+    bg: { exp: 'sunset', dim: 0, secs: 20, fade: 1.6, blur: 0, bright: 100, picMode: 'shuffle', pick: '' }, panel: 30, pblur: 6, seeThrough: 2, hl: 100, doneMsg: 'Well done, My baby ❤️',
     sound: 'chime', vol: 70, quiet: { on: false, from: '22:00', to: '07:00' }, allDayAt: '09:00',
     defRems: [], defNag: 0, dayFrom: 8, dayTo: 22, pomo: { work: 25, brk: 5, long: 15 }, pomoLog: {}
   };

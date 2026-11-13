@@ -14,6 +14,8 @@
   --well: color-mix(in srgb, #08060f var(--panel2, 24%), transparent); --pop: #1a123a; --navbg: rgba(14, 10, 32, .82); --evbg: linear-gradient(120deg, rgba(26, 18, 60, .94), rgba(48, 30, 96, .9)); --bgtop: #1a0f3d; --veil: #05040c;
   --r: 24px; --pad: 16px; color-scheme: dark;
 }
+/* filled highlight surfaces: how solid they are is the user's choice (--hl, 0 to 100) */
+:root { --fill: color-mix(in srgb, var(--accent) calc(var(--hl, 100) * 1%), transparent); --fill2: color-mix(in srgb, var(--accent2) calc(var(--hl, 100) * 1%), transparent); --on-fill: var(--on-accent); }
 /* Amber: the same depth, warmed. Dark cocoa and bronze with gold light. */
 :root[data-look="amber"] { --bg: #0d0704; --bg2: #2a1608; --glass: rgba(44, 26, 12, .64); --solid: #1e1108; --tint: rgba(255, 200, 130, .08); --tint2: rgba(255, 200, 130, .15); --ink: #fbefdc; --muted: #c9ae8c; --line: rgba(255, 205, 140, .18); --accent: #f5a93a; --accent2: #ffdc8f; --violet: #d9774a; --navy: #7a3a12; --on-accent: #1f1202; --late: #ff9c8f; --ok: #f5a93a; --warn: #ffd27a; --well: color-mix(in srgb, #0e0803 var(--panel2, 24%), transparent); --pop: #2b190b; --navbg: rgba(24, 14, 6, .84); --evbg: linear-gradient(120deg, rgba(52, 30, 12, .95), rgba(84, 46, 16, .9)); --bgtop: #4a2608; --veil: #080402; color-scheme: dark; }
 /* Pink and off-white: a light look. Warm off-white ground, rose accents, plum text. */
@@ -78,15 +80,15 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
 #nav button[aria-pressed="true"]::after { content: ""; position: absolute; bottom: 3px; width: 18px; height: 3px; border-radius: 2px; background: var(--accent); box-shadow: 0 0 10px var(--accent); }
 #nav .nav-agenda { display: none; }
 #fab { position: fixed; z-index: 16; right: max(18px, env(safe-area-inset-right, 0px)); bottom: calc(84px + env(safe-area-inset-bottom, 0px)); width: 60px; height: 60px; border-radius: 50%; border: 0; display: flex; align-items: center; justify-content: center;
-  background: radial-gradient(circle at 32% 28%, var(--accent2), var(--accent) 58%, color-mix(in srgb, var(--accent) 70%, #000)); color: var(--on-accent); box-shadow: 0 10px 30px color-mix(in srgb, var(--accent) 42%, transparent), 0 0 0 1px rgba(255, 220, 150, .5); }
+  background: radial-gradient(circle at 32% 28%, var(--fill2), var(--fill) 58%, color-mix(in srgb, var(--fill) 70%, #000)); color: var(--on-fill); box-shadow: 0 10px 30px color-mix(in srgb, var(--accent) calc(var(--hl, 100) * .42%), transparent), 0 0 0 1.5px var(--accent); -webkit-backdrop-filter: blur(var(--pblur, 6px)); backdrop-filter: blur(var(--pblur, 6px)); }
 #fab svg.i { width: 26px; height: 26px; stroke-width: 2.2; }
 
 .btn { border: 1px solid var(--line); background: var(--tint); padding: 10px 16px; min-height: 44px; border-radius: 999px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
-.btn.primary { background: linear-gradient(135deg, var(--accent2), var(--accent)); border-color: transparent; color: var(--on-accent); box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 28%, transparent); }
+.btn.primary { background: linear-gradient(135deg, var(--fill2), var(--fill)); border-color: var(--accent); color: var(--on-fill); box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) calc(var(--hl, 100) * .28%), transparent); }
 .btn.small { padding: 6px 13px; min-height: 36px; font-size: .86rem; }
 .btn.danger { color: var(--late); }
 .ib { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line); background: var(--tint); display: inline-flex; align-items: center; justify-content: center; position: relative; flex: none; }
-.ib.primary { background: linear-gradient(135deg, var(--accent2), var(--accent)); color: var(--on-accent); border-color: transparent; }
+.ib.primary { background: linear-gradient(135deg, var(--fill2), var(--fill)); color: var(--on-fill); border-color: var(--accent); }
 .ib[aria-pressed="true"] { color: var(--accent); box-shadow: var(--glow); }
 .badge { position: absolute; top: -3px; right: -3px; min-width: 19px; height: 19px; border-radius: 10px; background: var(--accent); color: var(--on-accent); font-size: .7rem; font-weight: 800; display: flex; align-items: center; justify-content: center; padding: 0 4px; }
 .seg { display: inline-flex; gap: 2px; background: var(--well); border: 1px solid var(--line); padding: 3px; border-radius: 999px; }
@@ -175,7 +177,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .eg { font-size: .64rem; font-weight: 700; border: 1px dashed var(--muted); color: var(--muted); border-radius: 6px; padding: 0 5px; }
 .prio-high { color: var(--accent); font-weight: 700; }
 .check { flex: none; width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--accent); background: transparent; font-weight: 800; line-height: 1; padding: 0; color: var(--on-accent); }
-.check[aria-pressed="true"] { background: var(--accent); box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 55%, transparent); }
+.check[aria-pressed="true"] { background: var(--fill); color: var(--on-fill); box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 55%, transparent); }
 .empty { border: 1px dashed var(--line); border-radius: 18px; padding: 20px; text-align: center; color: var(--muted); }
 .note-inline { border-radius: 14px; padding: 10px 12px; background: var(--well); border: 1px solid var(--line); border-left: 4px solid var(--c, var(--violet)); text-align: left; width: 100%; }
 .wk-day { display: flex; gap: 12px; align-items: baseline; padding: 8px 0; border-top: 1px solid var(--line); }
