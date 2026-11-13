@@ -74,7 +74,7 @@ window.CC = {};
     defRems: [], defNag: 0, dayFrom: 8, dayTo: 22, pomo: { work: 25, brk: 5, long: 15 }, pomoLog: {}
   };
   const S = CC.S = Object.assign({}, DEF, load('cc.settings', {}));
-  S.bg = Object.assign({}, DEF.bg, S.bg); if (S.bg.exp === 'cosmic') S.bg.exp = 'clouds'; if (!['luxe', 'clouds', 'photos'].includes(S.bg.exp)) S.bg.exp = 'luxe';
+  S.bg = Object.assign({}, DEF.bg, S.bg); if (S.bg.exp === 'cosmic') S.bg.exp = 'clouds'; if (!['luxe', 'clouds', 'lights', 'photos'].includes(S.bg.exp)) S.bg.exp = 'luxe';
   if (!['midnight', 'amber', 'blush'].includes(S.look)) S.look = 'midnight';
   if (!['elegant', 'round', 'modern'].includes(S.font)) S.font = 'elegant';
   if (!Array.isArray(S.hidden)) S.hidden = [];

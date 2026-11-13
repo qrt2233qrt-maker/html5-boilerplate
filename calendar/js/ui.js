@@ -104,7 +104,7 @@
     apply() {
       const c2 = $('#bg-c'), clouds = $('#bg-clouds'), media = $('#bg-media'), b = S.bg; if (!c2) return;
       pal = null; clearInterval(slideT); cancelAnimationFrame(raf); raf = 0;
-      clouds.hidden = b.exp !== 'clouds'; media.hidden = b.exp !== 'photos'; c2.hidden = b.exp !== 'luxe';
+      clouds.hidden = b.exp !== 'clouds' && b.exp !== 'lights'; media.hidden = b.exp !== 'photos'; c2.hidden = b.exp !== 'luxe';
       const f = 'blur(' + b.blur + 'px) brightness(' + b.bright + '%)'; media.style.filter = f; clouds.style.filter = f; media.style.setProperty('--fade', b.fade + 's');
       $('#bg-dim').style.opacity = b.dim / 100;
       if (b.exp === 'photos') { showSlide(); if (slides().length > 1) slideT = setInterval(showSlide, Math.max(4, b.secs) * 1000); }
